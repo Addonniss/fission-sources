@@ -1,0 +1,1 @@
+-keep,allowshrinking,allowobfuscation class dev.infusion.feature.vertical.media.CanonicalDetailsStateHolder { *; }

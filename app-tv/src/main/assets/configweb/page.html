@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>infusion</title>
+<link rel="stylesheet" href="/m/app.css">
+<script src="/m/app.js" defer></script>
+</head>
+<body>
+
+<section id="gate" hidden>
+  <h1>Phone setup</h1>
+  <p class="lede">Enter the session code shown on your TV.</p>
+  <form id="gate-form" autocomplete="off" novalidate>
+    <label class="field-label" for="code">Session code</label>
+    <input id="code" name="code" type="text" inputmode="text"
+           autocapitalize="characters" autocorrect="off" spellcheck="false"
+           placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="64"
+           aria-describedby="code-help">
+    <p id="code-help" class="help">Letters and digits only. Case and spacing
+      do not matter.</p>
+    <button id="gate-submit" type="submit">Connect</button>
+  </form>
+  <p id="gate-error" class="error" role="alert" hidden></p>
+</section>
+
+<section id="app" hidden>
+  <header class="bar">
+    <h1>infu<span class="wordmark-s">s</span>ion</h1>
+    <span id="remaining" class="remaining" aria-live="off"></span>
+  </header>
+
+  <p id="app-error" class="error" role="alert" hidden></p>
+  <p id="banner" class="banner" hidden></p>
+
+  <nav id="tabs" class="tabs" aria-label="Sections"></nav>
+  <main id="panels"></main>
+
+  <footer class="actions">
+    <button id="review" type="button" disabled>Review changes</button>
+    <span id="dirty" class="dirty"></span>
+  </footer>
+
+  <footer class="actions">
+    <button id="end" type="button" class="secondary">Done</button>
+  </footer>
+</section>
+
+<section id="result" hidden>
+  <h2 id="result-title">Waiting for your TV</h2>
+  <p id="result-note" class="lede"></p>
+  <ul id="result-list" class="result-list"></ul>
+  <button id="result-again" type="button" class="secondary" hidden>Back to settings</button>
+</section>
+
+</body>
+</html>

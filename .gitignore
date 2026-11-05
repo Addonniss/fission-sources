@@ -1,0 +1,62 @@
+# Gradle and Android build output
+.gradle/
+build/
+*/build/
+core/*/build/
+feature/*/build/
+source/*/build/
+tracking/*/build/
+app-tv/build/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE and editor state
+.idea/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+.vscode/
+
+# Local machine configuration — never committed
+local.properties
+gradle.properties.local
+*.local.properties
+.env
+.env.*
+*.env
+
+# Signing material and credentials
+key.properties
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Build outputs and generated artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Test and diagnostic output
+*/build/reports/
+*/build/test-results/
+test-output/
+*.hprof
+*.log
+
+# Local tooling and scratch
+tmp/
+.tmp/
+.scratch/
+*.bak
+*.orig
+*.rej

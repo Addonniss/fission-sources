@@ -1,0 +1,2 @@
+# Gradle-generated Windows wrapper script is CRLF by upstream convention
+*.bat text eol=crlf

@@ -1,0 +1,2772 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 13,
+    "identityHash": "675900a27bc6b6f445115fc9421bb13f",
+    "entities": [
+      {
+        "tableName": "profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `name` TEXT NOT NULL, `is_default` INTEGER NOT NULL, `created_at_ms` INTEGER NOT NULL, `profile_index` INTEGER NOT NULL, `pin_hash` TEXT, `failed_pin_attempts` INTEGER NOT NULL, `pin_locked_until_ms` INTEGER, `uses_primary_sources` INTEGER NOT NULL, PRIMARY KEY(`profile_id`))",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDefault",
+            "columnName": "is_default",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileIndex",
+            "columnName": "profile_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pinHash",
+            "columnName": "pin_hash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "failedPinAttempts",
+            "columnName": "failed_pin_attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pinLockedUntilMs",
+            "columnName": "pin_locked_until_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "usesPrimarySources",
+            "columnName": "uses_primary_sources",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_profiles_profile_index",
+            "unique": true,
+            "columnNames": [
+              "profile_index"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_profiles_profile_index` ON `${TABLE_NAME}` (`profile_index`)"
+          }
+        ]
+      },
+      {
+        "tableName": "titles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`title_id` TEXT NOT NULL, `kind` TEXT NOT NULL, `primary_title` TEXT NOT NULL, `original_title` TEXT, `year` INTEGER, `created_at_ms` INTEGER NOT NULL, `synopsis` TEXT, `genres` TEXT, `rating` TEXT, `synopsis_provenance` TEXT, `genres_provenance` TEXT, `rating_provenance` TEXT, `season_number` INTEGER, `episode_number` INTEGER, PRIMARY KEY(`title_id`))",
+        "fields": [
+          {
+            "fieldPath": "titleId",
+            "columnName": "title_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "primaryTitle",
+            "columnName": "primary_title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalTitle",
+            "columnName": "original_title",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "year",
+            "columnName": "year",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "synopsis",
+            "columnName": "synopsis",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "genres",
+            "columnName": "genres",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rating",
+            "columnName": "rating",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "synopsisProvenanceJson",
+            "columnName": "synopsis_provenance",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "genresProvenanceJson",
+            "columnName": "genres_provenance",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "ratingProvenanceJson",
+            "columnName": "rating_provenance",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "seasonNumber",
+            "columnName": "season_number",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "episodeNumber",
+            "columnName": "episode_number",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "title_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_titles_kind",
+            "unique": false,
+            "columnNames": [
+              "kind"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_titles_kind` ON `${TABLE_NAME}` (`kind`)"
+          }
+        ]
+      },
+      {
+        "tableName": "title_links",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`parent_title_id` TEXT NOT NULL, `child_title_id` TEXT NOT NULL, `relation` TEXT NOT NULL, PRIMARY KEY(`parent_title_id`, `child_title_id`), FOREIGN KEY(`parent_title_id`) REFERENCES `titles`(`title_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`child_title_id`) REFERENCES `titles`(`title_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "parentTitleId",
+            "columnName": "parent_title_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "childTitleId",
+            "columnName": "child_title_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relation",
+            "columnName": "relation",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "parent_title_id",
+            "child_title_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_title_links_child_title_id",
+            "unique": false,
+            "columnNames": [
+              "child_title_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_title_links_child_title_id` ON `${TABLE_NAME}` (`child_title_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "titles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "parent_title_id"
+            ],
+            "referencedColumns": [
+              "title_id"
+            ]
+          },
+          {
+            "table": "titles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "child_title_id"
+            ],
+            "referencedColumns": [
+              "title_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "editions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`edition_id` TEXT NOT NULL, `title_id` TEXT NOT NULL, `label` TEXT NOT NULL, `kind` TEXT NOT NULL, `runtime_minutes` INTEGER, `confidence` REAL NOT NULL, `provenance` TEXT NOT NULL, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`edition_id`), FOREIGN KEY(`title_id`) REFERENCES `titles`(`title_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "editionId",
+            "columnName": "edition_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleId",
+            "columnName": "title_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runtimeMinutes",
+            "columnName": "runtime_minutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provenance",
+            "columnName": "provenance",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "edition_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_editions_title_id",
+            "unique": false,
+            "columnNames": [
+              "title_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_editions_title_id` ON `${TABLE_NAME}` (`title_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "titles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "title_id"
+            ],
+            "referencedColumns": [
+              "title_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "external_ids",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`authority` TEXT NOT NULL, `native_id` TEXT NOT NULL, `title_id` TEXT, `edition_id` TEXT, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`authority`, `native_id`), FOREIGN KEY(`title_id`) REFERENCES `titles`(`title_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`edition_id`) REFERENCES `editions`(`edition_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "authority",
+            "columnName": "authority",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nativeId",
+            "columnName": "native_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleId",
+            "columnName": "title_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "editionId",
+            "columnName": "edition_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "authority",
+            "native_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_external_ids_title_id",
+            "unique": false,
+            "columnNames": [
+              "title_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_external_ids_title_id` ON `${TABLE_NAME}` (`title_id`)"
+          },
+          {
+            "name": "index_external_ids_edition_id",
+            "unique": false,
+            "columnNames": [
+              "edition_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_external_ids_edition_id` ON `${TABLE_NAME}` (`edition_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "titles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "title_id"
+            ],
+            "referencedColumns": [
+              "title_id"
+            ]
+          },
+          {
+            "table": "editions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "edition_id"
+            ],
+            "referencedColumns": [
+              "edition_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "identity_mappings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mapping_id` TEXT NOT NULL, `authority` TEXT NOT NULL, `external_value` TEXT NOT NULL, `canonical_title_id` TEXT NOT NULL, `canonical_edition_id` TEXT, `status` TEXT NOT NULL, `confidence` REAL NOT NULL, `origin` TEXT NOT NULL, `supersedes_mapping_id` TEXT, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`mapping_id`))",
+        "fields": [
+          {
+            "fieldPath": "mappingId",
+            "columnName": "mapping_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authority",
+            "columnName": "authority",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "externalValue",
+            "columnName": "external_value",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canonicalTitleId",
+            "columnName": "canonical_title_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canonicalEditionId",
+            "columnName": "canonical_edition_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "origin",
+            "columnName": "origin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "supersedesMappingId",
+            "columnName": "supersedes_mapping_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "mapping_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_identity_mappings_authority_external_value",
+            "unique": false,
+            "columnNames": [
+              "authority",
+              "external_value"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_identity_mappings_authority_external_value` ON `${TABLE_NAME}` (`authority`, `external_value`)"
+          },
+          {
+            "name": "index_identity_mappings_canonical_title_id",
+            "unique": false,
+            "columnNames": [
+              "canonical_title_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_identity_mappings_canonical_title_id` ON `${TABLE_NAME}` (`canonical_title_id`)"
+          },
+          {
+            "name": "index_identity_mappings_supersedes_mapping_id",
+            "unique": false,
+            "columnNames": [
+              "supersedes_mapping_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_identity_mappings_supersedes_mapping_id` ON `${TABLE_NAME}` (`supersedes_mapping_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sources",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`source_id` TEXT NOT NULL, `type` TEXT NOT NULL, `owner_profile_id` TEXT NOT NULL, `display_name` TEXT NOT NULL, `origin` TEXT, `trust_class` TEXT NOT NULL, `enabled` INTEGER NOT NULL, `health_state` TEXT NOT NULL, `last_health_check_ms` INTEGER, `created_at_ms` INTEGER NOT NULL, `removed_at_ms` INTEGER, PRIMARY KEY(`source_id`), FOREIGN KEY(`owner_profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerProfileId",
+            "columnName": "owner_profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "origin",
+            "columnName": "origin",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "trustClass",
+            "columnName": "trust_class",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "healthState",
+            "columnName": "health_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastHealthCheckMs",
+            "columnName": "last_health_check_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "removedAtMs",
+            "columnName": "removed_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "source_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sources_owner_profile_id",
+            "unique": false,
+            "columnNames": [
+              "owner_profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sources_owner_profile_id` ON `${TABLE_NAME}` (`owner_profile_id`)"
+          },
+          {
+            "name": "index_sources_type",
+            "unique": false,
+            "columnNames": [
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sources_type` ON `${TABLE_NAME}` (`type`)"
+          },
+          {
+            "name": "index_sources_removed_at_ms",
+            "unique": false,
+            "columnNames": [
+              "removed_at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sources_removed_at_ms` ON `${TABLE_NAME}` (`removed_at_ms`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "owner_profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "secret_references",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`secret_ref_id` TEXT NOT NULL, `source_id` TEXT NOT NULL, `kind` TEXT NOT NULL, `key_alias` TEXT NOT NULL, `scope` TEXT, `created_at_ms` INTEGER NOT NULL, `expires_at_ms` INTEGER, `revoked_at_ms` INTEGER, PRIMARY KEY(`secret_ref_id`), FOREIGN KEY(`source_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "secretRefId",
+            "columnName": "secret_ref_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyAlias",
+            "columnName": "key_alias",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAtMs",
+            "columnName": "expires_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "revokedAtMs",
+            "columnName": "revoked_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "secret_ref_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_secret_references_source_id",
+            "unique": false,
+            "columnNames": [
+              "source_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_secret_references_source_id` ON `${TABLE_NAME}` (`source_id`)"
+          },
+          {
+            "name": "index_secret_references_source_id_kind_scope",
+            "unique": true,
+            "columnNames": [
+              "source_id",
+              "kind",
+              "scope"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_secret_references_source_id_kind_scope` ON `${TABLE_NAME}` (`source_id`, `kind`, `scope`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "source_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "server_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`server_item_id` TEXT NOT NULL, `source_id` TEXT NOT NULL, `native_id` TEXT NOT NULL, `native_parent_id` TEXT, `native_type` TEXT NOT NULL, `library_id` TEXT, `revision` TEXT, `title_id` TEXT, `edition_id` TEXT, `display_title` TEXT, `production_year` INTEGER, `provider_payload_json` TEXT, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`server_item_id`), FOREIGN KEY(`source_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`title_id`) REFERENCES `titles`(`title_id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`edition_id`) REFERENCES `editions`(`edition_id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "serverItemId",
+            "columnName": "server_item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nativeId",
+            "columnName": "native_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nativeParentId",
+            "columnName": "native_parent_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nativeType",
+            "columnName": "native_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "libraryId",
+            "columnName": "library_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "titleId",
+            "columnName": "title_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "editionId",
+            "columnName": "edition_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "displayTitle",
+            "columnName": "display_title",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "productionYear",
+            "columnName": "production_year",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "providerPayloadJson",
+            "columnName": "provider_payload_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "server_item_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_server_items_source_id_native_id",
+            "unique": true,
+            "columnNames": [
+              "source_id",
+              "native_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_server_items_source_id_native_id` ON `${TABLE_NAME}` (`source_id`, `native_id`)"
+          },
+          {
+            "name": "index_server_items_title_id",
+            "unique": false,
+            "columnNames": [
+              "title_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_server_items_title_id` ON `${TABLE_NAME}` (`title_id`)"
+          },
+          {
+            "name": "index_server_items_edition_id",
+            "unique": false,
+            "columnNames": [
+              "edition_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_server_items_edition_id` ON `${TABLE_NAME}` (`edition_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "source_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          },
+          {
+            "table": "titles",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "title_id"
+            ],
+            "referencedColumns": [
+              "title_id"
+            ]
+          },
+          {
+            "table": "editions",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "edition_id"
+            ],
+            "referencedColumns": [
+              "edition_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "server_media_versions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`version_id` TEXT NOT NULL, `server_item_id` TEXT NOT NULL, `native_version_id` TEXT, `container` TEXT, `stream_facts_json` TEXT, `path_class` TEXT, `decision_inputs_json` TEXT, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`version_id`), FOREIGN KEY(`server_item_id`) REFERENCES `server_items`(`server_item_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "versionId",
+            "columnName": "version_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverItemId",
+            "columnName": "server_item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nativeVersionId",
+            "columnName": "native_version_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "container",
+            "columnName": "container",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "streamFactsJson",
+            "columnName": "stream_facts_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "pathClass",
+            "columnName": "path_class",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "decisionInputsJson",
+            "columnName": "decision_inputs_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "version_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_server_media_versions_server_item_id",
+            "unique": false,
+            "columnNames": [
+              "server_item_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_server_media_versions_server_item_id` ON `${TABLE_NAME}` (`server_item_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "server_items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "server_item_id"
+            ],
+            "referencedColumns": [
+              "server_item_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "local_assets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`local_asset_id` TEXT NOT NULL, `source_id` TEXT NOT NULL, `uri_identity` TEXT NOT NULL, `display_name` TEXT, `size_bytes` INTEGER, `modified_at_ms` INTEGER, `seekable` INTEGER, `fingerprint` TEXT, `title_id` TEXT, `edition_id` TEXT, `media_facts_json` TEXT, `access_state` TEXT NOT NULL, `last_checked_ms` INTEGER, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`local_asset_id`), FOREIGN KEY(`source_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`title_id`) REFERENCES `titles`(`title_id`) ON UPDATE NO ACTION ON DELETE SET NULL , FOREIGN KEY(`edition_id`) REFERENCES `editions`(`edition_id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "localAssetId",
+            "columnName": "local_asset_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uriIdentity",
+            "columnName": "uri_identity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "size_bytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "modifiedAtMs",
+            "columnName": "modified_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "seekable",
+            "columnName": "seekable",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "titleId",
+            "columnName": "title_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "editionId",
+            "columnName": "edition_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mediaFactsJson",
+            "columnName": "media_facts_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "accessState",
+            "columnName": "access_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastCheckedMs",
+            "columnName": "last_checked_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "local_asset_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_assets_source_id_uri_identity",
+            "unique": true,
+            "columnNames": [
+              "source_id",
+              "uri_identity"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_assets_source_id_uri_identity` ON `${TABLE_NAME}` (`source_id`, `uri_identity`)"
+          },
+          {
+            "name": "index_local_assets_title_id",
+            "unique": false,
+            "columnNames": [
+              "title_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_assets_title_id` ON `${TABLE_NAME}` (`title_id`)"
+          },
+          {
+            "name": "index_local_assets_edition_id",
+            "unique": false,
+            "columnNames": [
+              "edition_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_assets_edition_id` ON `${TABLE_NAME}` (`edition_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "source_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          },
+          {
+            "table": "titles",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "title_id"
+            ],
+            "referencedColumns": [
+              "title_id"
+            ]
+          },
+          {
+            "table": "editions",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "edition_id"
+            ],
+            "referencedColumns": [
+              "edition_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "availability",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`availability_id` TEXT NOT NULL, `title_id` TEXT NOT NULL, `edition_id` TEXT, `source_id` TEXT NOT NULL, `native_resource_id` TEXT, `kind` TEXT NOT NULL, `region` TEXT, `expires_at_ms` INTEGER, `entitlement_hints_json` TEXT, `provenance` TEXT, `refreshed_at_ms` INTEGER, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`availability_id`), FOREIGN KEY(`title_id`) REFERENCES `titles`(`title_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`edition_id`) REFERENCES `editions`(`edition_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`source_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "availabilityId",
+            "columnName": "availability_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleId",
+            "columnName": "title_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "editionId",
+            "columnName": "edition_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nativeResourceId",
+            "columnName": "native_resource_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "region",
+            "columnName": "region",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "expiresAtMs",
+            "columnName": "expires_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "entitlementHintsJson",
+            "columnName": "entitlement_hints_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "provenance",
+            "columnName": "provenance",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "refreshedAtMs",
+            "columnName": "refreshed_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "availability_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_availability_title_id",
+            "unique": false,
+            "columnNames": [
+              "title_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_availability_title_id` ON `${TABLE_NAME}` (`title_id`)"
+          },
+          {
+            "name": "index_availability_edition_id",
+            "unique": false,
+            "columnNames": [
+              "edition_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_availability_edition_id` ON `${TABLE_NAME}` (`edition_id`)"
+          },
+          {
+            "name": "index_availability_source_id",
+            "unique": false,
+            "columnNames": [
+              "source_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_availability_source_id` ON `${TABLE_NAME}` (`source_id`)"
+          },
+          {
+            "name": "index_availability_source_id_native_resource_id",
+            "unique": true,
+            "columnNames": [
+              "source_id",
+              "native_resource_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_availability_source_id_native_resource_id` ON `${TABLE_NAME}` (`source_id`, `native_resource_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "titles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "title_id"
+            ],
+            "referencedColumns": [
+              "title_id"
+            ]
+          },
+          {
+            "table": "editions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "edition_id"
+            ],
+            "referencedColumns": [
+              "edition_id"
+            ]
+          },
+          {
+            "table": "sources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "source_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "candidate_handoff",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`candidate_id` TEXT NOT NULL, `snapshot_json` TEXT NOT NULL, `transport_secret_ref` TEXT, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`candidate_id`))",
+        "fields": [
+          {
+            "fieldPath": "candidateId",
+            "columnName": "candidate_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotJson",
+            "columnName": "snapshot_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transportSecretRef",
+            "columnName": "transport_secret_ref",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "candidate_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_candidate_handoff_candidate_id",
+            "unique": true,
+            "columnNames": [
+              "candidate_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_candidate_handoff_candidate_id` ON `${TABLE_NAME}` (`candidate_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "playable_candidates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`candidate_id` TEXT NOT NULL, `title_id` TEXT NOT NULL, `edition_id` TEXT, `source_id` TEXT NOT NULL, `native_item_id` TEXT, `original_provider_label` TEXT, `normalized_facts_json` TEXT, `expected_mode` TEXT NOT NULL, `compatibility_state` TEXT NOT NULL, `compatibility_reasons_json` TEXT, `security_policy_result_json` TEXT, `ranking_explanation_json` TEXT, `transport_ref` TEXT, `expires_at_ms` INTEGER, `reachability_state` TEXT NOT NULL, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`candidate_id`), FOREIGN KEY(`title_id`) REFERENCES `titles`(`title_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`edition_id`) REFERENCES `editions`(`edition_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`source_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "candidateId",
+            "columnName": "candidate_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleId",
+            "columnName": "title_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "editionId",
+            "columnName": "edition_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nativeItemId",
+            "columnName": "native_item_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "originalProviderLabel",
+            "columnName": "original_provider_label",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "normalizedFactsJson",
+            "columnName": "normalized_facts_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "expectedMode",
+            "columnName": "expected_mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "compatibilityState",
+            "columnName": "compatibility_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "compatibilityReasonsJson",
+            "columnName": "compatibility_reasons_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "securityPolicyResultJson",
+            "columnName": "security_policy_result_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rankingExplanationJson",
+            "columnName": "ranking_explanation_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "transportRef",
+            "columnName": "transport_ref",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "expiresAtMs",
+            "columnName": "expires_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "reachabilityState",
+            "columnName": "reachability_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "candidate_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playable_candidates_title_id",
+            "unique": false,
+            "columnNames": [
+              "title_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playable_candidates_title_id` ON `${TABLE_NAME}` (`title_id`)"
+          },
+          {
+            "name": "index_playable_candidates_edition_id",
+            "unique": false,
+            "columnNames": [
+              "edition_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playable_candidates_edition_id` ON `${TABLE_NAME}` (`edition_id`)"
+          },
+          {
+            "name": "index_playable_candidates_source_id",
+            "unique": false,
+            "columnNames": [
+              "source_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playable_candidates_source_id` ON `${TABLE_NAME}` (`source_id`)"
+          },
+          {
+            "name": "index_playable_candidates_expires_at_ms",
+            "unique": false,
+            "columnNames": [
+              "expires_at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playable_candidates_expires_at_ms` ON `${TABLE_NAME}` (`expires_at_ms`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "titles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "title_id"
+            ],
+            "referencedColumns": [
+              "title_id"
+            ]
+          },
+          {
+            "table": "editions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "edition_id"
+            ],
+            "referencedColumns": [
+              "edition_id"
+            ]
+          },
+          {
+            "table": "sources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "source_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "watch_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`event_id` TEXT NOT NULL, `profile_id` TEXT NOT NULL, `watch_key` TEXT NOT NULL, `kind` TEXT NOT NULL, `origin` TEXT NOT NULL, `position_ms` INTEGER, `duration_ms` INTEGER, `occurred_at_ms` INTEGER NOT NULL, `received_at_ms` INTEGER NOT NULL, `observed_at_ms` INTEGER, `connector_id` TEXT, `connector_event_id` TEXT, `session_id` TEXT, `anchor_source_id` TEXT, `anchor_native_id` TEXT, `anchor_family_id` TEXT, `anchor_version_id` TEXT, `anchor_position_ms` INTEGER, `anchor_anchored_at_ms` INTEGER, PRIMARY KEY(`event_id`), FOREIGN KEY(`profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "event_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "watchKey",
+            "columnName": "watch_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "origin",
+            "columnName": "origin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "positionMs",
+            "columnName": "position_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "duration_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "occurredAtMs",
+            "columnName": "occurred_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAtMs",
+            "columnName": "received_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observedAtMs",
+            "columnName": "observed_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "connectorId",
+            "columnName": "connector_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "connectorEventId",
+            "columnName": "connector_event_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorSourceId",
+            "columnName": "anchor_source_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorNativeId",
+            "columnName": "anchor_native_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorFamilyId",
+            "columnName": "anchor_family_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorVersionId",
+            "columnName": "anchor_version_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorPositionMs",
+            "columnName": "anchor_position_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "anchorAnchoredAtMs",
+            "columnName": "anchor_anchored_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "event_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_watch_events_profile_id_watch_key_occurred_at_ms",
+            "unique": false,
+            "columnNames": [
+              "profile_id",
+              "watch_key",
+              "occurred_at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_watch_events_profile_id_watch_key_occurred_at_ms` ON `${TABLE_NAME}` (`profile_id`, `watch_key`, `occurred_at_ms`)"
+          },
+          {
+            "name": "index_watch_events_profile_id_connector_event_id",
+            "unique": true,
+            "columnNames": [
+              "profile_id",
+              "connector_event_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_watch_events_profile_id_connector_event_id` ON `${TABLE_NAME}` (`profile_id`, `connector_event_id`)"
+          },
+          {
+            "name": "index_watch_events_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_watch_events_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "watch_states",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `watch_key` TEXT NOT NULL, `status` TEXT NOT NULL, `position_ms` INTEGER NOT NULL, `duration_ms` INTEGER, `completion_fraction` REAL NOT NULL, `last_event_id` TEXT, `last_meaningful_at_ms` INTEGER, `active_session_id` TEXT, `anchor_source_id` TEXT, `anchor_native_id` TEXT, `anchor_family_id` TEXT, `anchor_version_id` TEXT, `anchor_position_ms` INTEGER, `anchor_anchored_at_ms` INTEGER, `conflicts_json` TEXT NOT NULL, `connector_states_json` TEXT NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`profile_id`, `watch_key`), FOREIGN KEY(`profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "watchKey",
+            "columnName": "watch_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "positionMs",
+            "columnName": "position_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "duration_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "completionFraction",
+            "columnName": "completion_fraction",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastEventId",
+            "columnName": "last_event_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastMeaningfulAtMs",
+            "columnName": "last_meaningful_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "activeSessionId",
+            "columnName": "active_session_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorSourceId",
+            "columnName": "anchor_source_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorNativeId",
+            "columnName": "anchor_native_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorFamilyId",
+            "columnName": "anchor_family_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorVersionId",
+            "columnName": "anchor_version_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "anchorPositionMs",
+            "columnName": "anchor_position_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "anchorAnchoredAtMs",
+            "columnName": "anchor_anchored_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "conflictsJson",
+            "columnName": "conflicts_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "connectorStatesJson",
+            "columnName": "connector_states_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id",
+            "watch_key"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_watch_states_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_watch_states_status` ON `${TABLE_NAME}` (`status`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "playback_attempts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`attempt_id` TEXT NOT NULL, `profile_id` TEXT NOT NULL, `candidate_id` TEXT, `source_id` TEXT, `engine` TEXT NOT NULL, `route_snapshot_json` TEXT, `stages_json` TEXT, `classified_failure` TEXT, `redacted_diagnostics_json` TEXT, `started_at_ms` INTEGER NOT NULL, `ended_at_ms` INTEGER, PRIMARY KEY(`attempt_id`), FOREIGN KEY(`profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`source_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "attemptId",
+            "columnName": "attempt_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "candidateId",
+            "columnName": "candidate_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "engine",
+            "columnName": "engine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "routeSnapshotJson",
+            "columnName": "route_snapshot_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stagesJson",
+            "columnName": "stages_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "classifiedFailure",
+            "columnName": "classified_failure",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "redactedDiagnosticsJson",
+            "columnName": "redacted_diagnostics_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startedAtMs",
+            "columnName": "started_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtMs",
+            "columnName": "ended_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "attempt_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_playback_attempts_profile_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_attempts_profile_id` ON `${TABLE_NAME}` (`profile_id`)"
+          },
+          {
+            "name": "index_playback_attempts_candidate_id",
+            "unique": false,
+            "columnNames": [
+              "candidate_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_attempts_candidate_id` ON `${TABLE_NAME}` (`candidate_id`)"
+          },
+          {
+            "name": "index_playback_attempts_source_id",
+            "unique": false,
+            "columnNames": [
+              "source_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_playback_attempts_source_id` ON `${TABLE_NAME}` (`source_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          },
+          {
+            "table": "sources",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "source_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`outbox_id` TEXT NOT NULL, `profile_id` TEXT NOT NULL, `connector_id` TEXT NOT NULL, `idempotency_key` TEXT NOT NULL, `kind` TEXT NOT NULL, `watch_key` TEXT NOT NULL, `position_ms` INTEGER, `duration_ms` INTEGER, `session_id` TEXT, `occurred_at_ms` INTEGER NOT NULL, `state` TEXT NOT NULL, `attempt_count` INTEGER NOT NULL, `created_at_ms` INTEGER NOT NULL, `next_attempt_at_ms` INTEGER, `last_error` TEXT, `acked_at_ms` INTEGER, PRIMARY KEY(`outbox_id`), FOREIGN KEY(`profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "outboxId",
+            "columnName": "outbox_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "connectorId",
+            "columnName": "connector_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotency_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "watchKey",
+            "columnName": "watch_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "positionMs",
+            "columnName": "position_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "duration_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "occurredAtMs",
+            "columnName": "occurred_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attempt_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextAttemptAtMs",
+            "columnName": "next_attempt_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "last_error",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "ackedAtMs",
+            "columnName": "acked_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "outbox_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbox_profile_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_profile_id` ON `${TABLE_NAME}` (`profile_id`)"
+          },
+          {
+            "name": "index_outbox_connector_id_idempotency_key",
+            "unique": true,
+            "columnNames": [
+              "connector_id",
+              "idempotency_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_outbox_connector_id_idempotency_key` ON `${TABLE_NAME}` (`connector_id`, `idempotency_key`)"
+          },
+          {
+            "name": "index_outbox_state_next_attempt_at_ms",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "next_attempt_at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_state_next_attempt_at_ms` ON `${TABLE_NAME}` (`state`, `next_attempt_at_ms`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "checkpoints",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `connector_id` TEXT NOT NULL, `last_import_cursor` TEXT, `last_imported_at_ms` INTEGER, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`profile_id`, `connector_id`), FOREIGN KEY(`profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "connectorId",
+            "columnName": "connector_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastImportCursor",
+            "columnName": "last_import_cursor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastImportedAtMs",
+            "columnName": "last_imported_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id",
+            "connector_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_checkpoints_profile_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_checkpoints_profile_id` ON `${TABLE_NAME}` (`profile_id`)"
+          },
+          {
+            "name": "index_checkpoints_updated_at_ms",
+            "unique": false,
+            "columnNames": [
+              "updated_at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_checkpoints_updated_at_ms` ON `${TABLE_NAME}` (`updated_at_ms`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "play_session_contexts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`context_id` TEXT NOT NULL, `source_id` TEXT NOT NULL, `watch_session_id` TEXT NOT NULL, `item_id` TEXT NOT NULL, `media_source_id` TEXT NOT NULL, `play_session_id` TEXT NOT NULL, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`context_id`), FOREIGN KEY(`source_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "contextId",
+            "columnName": "context_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "watchSessionId",
+            "columnName": "watch_session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaSourceId",
+            "columnName": "media_source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playSessionId",
+            "columnName": "play_session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "context_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_play_session_contexts_source_id_watch_session_id",
+            "unique": true,
+            "columnNames": [
+              "source_id",
+              "watch_session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_play_session_contexts_source_id_watch_session_id` ON `${TABLE_NAME}` (`source_id`, `watch_session_id`)"
+          },
+          {
+            "name": "index_play_session_contexts_source_id",
+            "unique": false,
+            "columnNames": [
+              "source_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_play_session_contexts_source_id` ON `${TABLE_NAME}` (`source_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "source_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "jellyfin_source_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`source_id` TEXT NOT NULL, `origin` TEXT NOT NULL, `username` TEXT NOT NULL, `user_id` TEXT NOT NULL, `server_id` TEXT NOT NULL, `device_id` TEXT NOT NULL, `token_ref_id` TEXT, `server_version` TEXT, `version_qualification` TEXT, `lan_consented` INTEGER NOT NULL, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`source_id`), FOREIGN KEY(`source_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "origin",
+            "columnName": "origin",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "username",
+            "columnName": "username",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "server_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokenRefId",
+            "columnName": "token_ref_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "serverVersion",
+            "columnName": "server_version",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "versionQualification",
+            "columnName": "version_qualification",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lanConsented",
+            "columnName": "lan_consented",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "source_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_jellyfin_source_state_source_id",
+            "unique": true,
+            "columnNames": [
+              "source_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_jellyfin_source_state_source_id` ON `${TABLE_NAME}` (`source_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "source_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "retirement_intents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`source_id` TEXT NOT NULL, `payload` TEXT NOT NULL, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`source_id`))",
+        "fields": [
+          {
+            "fieldPath": "sourceId",
+            "columnName": "source_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "source_id"
+          ]
+        }
+      },
+      {
+        "tableName": "installed_addons",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`addon_id` TEXT NOT NULL, `public_base_url` TEXT NOT NULL, `query_secret_ref_id` TEXT, `manifest_id` TEXT NOT NULL, `manifest_name` TEXT NOT NULL, `manifest_version` TEXT NOT NULL, `manifest_description` TEXT NOT NULL, `manifest_snapshot_json` TEXT NOT NULL, `manifest_fetched_at_ms` INTEGER NOT NULL, `disclosure_json` TEXT NOT NULL, `lan_consented` INTEGER NOT NULL, `lan_host` TEXT, `enabled` INTEGER NOT NULL, `sort_order` INTEGER NOT NULL, `owner_profile_id` TEXT NOT NULL, `installed_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, `removed_at_ms` INTEGER, PRIMARY KEY(`addon_id`), FOREIGN KEY(`addon_id`) REFERENCES `sources`(`source_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`owner_profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "addonId",
+            "columnName": "addon_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicBaseUrl",
+            "columnName": "public_base_url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "querySecretRefId",
+            "columnName": "query_secret_ref_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "manifestId",
+            "columnName": "manifest_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestName",
+            "columnName": "manifest_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestVersion",
+            "columnName": "manifest_version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestDescription",
+            "columnName": "manifest_description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestSnapshotJson",
+            "columnName": "manifest_snapshot_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestFetchedAtMs",
+            "columnName": "manifest_fetched_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disclosureJson",
+            "columnName": "disclosure_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lanConsented",
+            "columnName": "lan_consented",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lanHost",
+            "columnName": "lan_host",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerProfileId",
+            "columnName": "owner_profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "installedAtMs",
+            "columnName": "installed_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "removedAtMs",
+            "columnName": "removed_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "addon_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_installed_addons_owner_profile_id",
+            "unique": false,
+            "columnNames": [
+              "owner_profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_installed_addons_owner_profile_id` ON `${TABLE_NAME}` (`owner_profile_id`)"
+          },
+          {
+            "name": "index_installed_addons_public_base_url",
+            "unique": false,
+            "columnNames": [
+              "public_base_url"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_installed_addons_public_base_url` ON `${TABLE_NAME}` (`public_base_url`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "addon_id"
+            ],
+            "referencedColumns": [
+              "source_id"
+            ]
+          },
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "owner_profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "addon_catalog_preferences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `addon_id` TEXT NOT NULL, `catalog_type` TEXT NOT NULL, `catalog_id` TEXT NOT NULL, `sort_order` INTEGER NOT NULL, `hidden` INTEGER NOT NULL, PRIMARY KEY(`profile_id`, `addon_id`, `catalog_type`, `catalog_id`), FOREIGN KEY(`addon_id`) REFERENCES `installed_addons`(`addon_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addonId",
+            "columnName": "addon_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "catalogType",
+            "columnName": "catalog_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "catalogId",
+            "columnName": "catalog_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hidden",
+            "columnName": "hidden",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id",
+            "addon_id",
+            "catalog_type",
+            "catalog_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_addon_catalog_preferences_addon_id",
+            "unique": false,
+            "columnNames": [
+              "addon_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_addon_catalog_preferences_addon_id` ON `${TABLE_NAME}` (`addon_id`)"
+          },
+          {
+            "name": "index_addon_catalog_preferences_profile_id_sort_order",
+            "unique": false,
+            "columnNames": [
+              "profile_id",
+              "sort_order"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_addon_catalog_preferences_profile_id_sort_order` ON `${TABLE_NAME}` (`profile_id`, `sort_order`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "installed_addons",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "addon_id"
+            ],
+            "referencedColumns": [
+              "addon_id"
+            ]
+          },
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "addon_health_observations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`observation_id` TEXT NOT NULL, `addon_id` TEXT NOT NULL, `observed_at_ms` INTEGER NOT NULL, `healthy` INTEGER NOT NULL, `reason` TEXT, `status` INTEGER, `source_health` TEXT NOT NULL, PRIMARY KEY(`observation_id`), FOREIGN KEY(`addon_id`) REFERENCES `installed_addons`(`addon_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "observationId",
+            "columnName": "observation_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addonId",
+            "columnName": "addon_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observedAtMs",
+            "columnName": "observed_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "healthy",
+            "columnName": "healthy",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sourceHealth",
+            "columnName": "source_health",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "observation_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_addon_health_observations_addon_id_observed_at_ms",
+            "unique": false,
+            "columnNames": [
+              "addon_id",
+              "observed_at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_addon_health_observations_addon_id_observed_at_ms` ON `${TABLE_NAME}` (`addon_id`, `observed_at_ms`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "installed_addons",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "addon_id"
+            ],
+            "referencedColumns": [
+              "addon_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "home_catalog_preferences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`profile_id` TEXT NOT NULL, `addon_id` TEXT NOT NULL, `catalog_type` TEXT NOT NULL, `catalog_id` TEXT NOT NULL, `sort_order` INTEGER NOT NULL, PRIMARY KEY(`profile_id`, `addon_id`, `catalog_type`, `catalog_id`), FOREIGN KEY(`addon_id`) REFERENCES `installed_addons`(`addon_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`profile_id`) REFERENCES `profiles`(`profile_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addonId",
+            "columnName": "addon_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "catalogType",
+            "columnName": "catalog_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "catalogId",
+            "columnName": "catalog_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sort_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profile_id",
+            "addon_id",
+            "catalog_type",
+            "catalog_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_home_catalog_preferences_addon_id",
+            "unique": false,
+            "columnNames": [
+              "addon_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_home_catalog_preferences_addon_id` ON `${TABLE_NAME}` (`addon_id`)"
+          },
+          {
+            "name": "index_home_catalog_preferences_profile_id_sort_order",
+            "unique": false,
+            "columnNames": [
+              "profile_id",
+              "sort_order"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_home_catalog_preferences_profile_id_sort_order` ON `${TABLE_NAME}` (`profile_id`, `sort_order`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "installed_addons",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "addon_id"
+            ],
+            "referencedColumns": [
+              "addon_id"
+            ]
+          },
+          {
+            "table": "profiles",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "profile_id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '675900a27bc6b6f445115fc9421bb13f')"
+    ]
+  }
+}
