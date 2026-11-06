@@ -86,17 +86,15 @@ Pre-alpha, under active development. The current source snapshot corresponds to
 version **0.1.1** (`versionCode` 101). Behaviour, interface details and internal
 structure can still change between snapshots; there is no stability guarantee yet.
 
-## Licence
+## License
 
-infusion's original application code, branding, artwork and release materials are
-proprietary. Publishing this source does not grant permission to copy, modify,
-redistribute or create derivative works, except where expressly permitted by the
-rights holder or applicable law. See [LICENSE](LICENSE).
+INFUSION's original application source code is licensed under the GNU General Public License version 3.0 (GPL-3.0-only). See [LICENSE](LICENSE).
 
-Third-party components retain their own licences and attributions; see
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md),
-[THIRD-PARTY-SOURCE-NOTICES.md](THIRD-PARTY-SOURCE-NOTICES.md) and the
-[public notices page](https://infusionplayer.stream/notices/).
+You are free to use, study, modify, and redistribute the GPL-covered application code under the terms of that license.
+
+The INFUSION name, logos, and original branding are not granted for independent trademark use by the GPL software license. Any separately licensed artwork or other assets must be identified explicitly.
+
+Third-party components retain their respective licenses and attribution requirements. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), [THIRD-PARTY-SOURCE-NOTICES.md](THIRD-PARTY-SOURCE-NOTICES.md), and the [public notices page](https://infusionplayer.stream/notices/).
 
 ## Related repositories
 
