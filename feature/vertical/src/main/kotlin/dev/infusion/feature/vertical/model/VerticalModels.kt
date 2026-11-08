@@ -161,6 +161,7 @@ data class EpisodeDetailsUiState(
     val resumePositionMs: Long? = null,
     val primaryAction: PrimaryAction = PrimaryAction.UNPLAYABLE,
     val unplayableReason: String? = null,
+
     val hasAvailability: Boolean = false,
     val selectedEditionLabel: String? = null,
     val sourceLabel: String? = null,
@@ -213,6 +214,7 @@ data class DetailsUiState(
     val unplayableReason: String? = null,
 
     val selectedEditionLabel: String? = null,
+
     val hasAvailability: Boolean = false,
 
     val phase: DetailsPhase? = null,

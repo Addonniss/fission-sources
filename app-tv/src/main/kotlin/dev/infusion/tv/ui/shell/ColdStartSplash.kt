@@ -64,7 +64,7 @@ class ColdStartSplashController(
     var startupTerminal: Boolean by mutableStateOf(false)
         private set
 
-    var homeSurfaceReady: Boolean by mutableStateOf(false)
+    var startupSurfaceReady: Boolean by mutableStateOf(false)
         private set
 
     var revealed: Boolean by mutableStateOf(false)
@@ -92,9 +92,9 @@ class ColdStartSplashController(
         trace("startup-terminal", "")
     }
 
-    fun onHomeSurfaceReady() {
-        homeSurfaceReady = true
-        trace("home-surface-ready", "")
+    fun onStartupSurfaceReady() {
+        startupSurfaceReady = true
+        trace("startup-surface-ready", "")
         revealIfReady()
     }
 
@@ -125,7 +125,7 @@ class ColdStartSplashController(
         revealIfReady()
     }
 
-    fun surfaceReady(): Boolean = startupReady && homeSurfaceReady
+    fun surfaceReady(): Boolean = startupReady && startupSurfaceReady
 
     fun onModeObserved(effective: SplashScreenMode) {
         if (mode == effective) return

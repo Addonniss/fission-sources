@@ -15,6 +15,8 @@ internal interface PlaybackMeter {
     fun onLoadCanceled(loadEventInfo: LoadEventInfo)
     fun onBufferingChanged(isBuffering: Boolean, bufferedPositionMs: Long?)
     fun onPositionSample(nowMs: Long, positionMs: Long, bufferedPositionMs: Long?, isPlaying: Boolean)
+
+    fun onSampleBufferBudgetResolved(budget: MeasuredSampleBufferBudget)
     fun onFirstFrame(nowMs: Long)
     fun onDroppedFrames(total: Long)
     fun summarise(cause: String)
@@ -34,6 +36,7 @@ internal interface PlaybackMeter {
             bufferedPositionMs: Long?,
             isPlaying: Boolean,
         ) = Unit
+        override fun onSampleBufferBudgetResolved(budget: MeasuredSampleBufferBudget) = Unit
         override fun onFirstFrame(nowMs: Long) = Unit
         override fun onDroppedFrames(total: Long) = Unit
         override fun summarise(cause: String) = Unit

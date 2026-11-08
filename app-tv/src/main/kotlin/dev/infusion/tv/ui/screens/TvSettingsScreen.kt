@@ -192,7 +192,6 @@ internal const val JellyfinFocusConnect = "jellyfin:connect"
 internal const val JellyfinFocusRemove = "jellyfin:remove"
 
 const val SettingsPairingOpen = "settings:pairing:open"
-const val SettingsDiagnosticsOpen = "settings:diagnostics:open"
 
 internal const val TrackingFocusAction = "tracking:action"
 internal const val TrackingFocusCode = "tracking:code"
@@ -988,7 +987,6 @@ private fun homePreferenceStateKey(preferenceKey: String) = "$preferenceKey:stat
 
 private const val ProfilesFirstKey = KeyCreate
 private const val PairingFirstKey = "pairing:open"
-private const val DiagnosticsFirstKey = "diagnostics:open"
 
 private fun homeGroupKey(addonId: String) = "settings:home:group:$addonId"
 private fun homeGroupShownKey(addonId: String) = "settings:home:group:$addonId:shown"
@@ -1137,7 +1135,8 @@ fun TvSettingsScreen(
     profileManagement: ProfileManagementStateHolder? = null,
     pinEntryFactory: ((String) -> PinEntryStateHolder)? = null,
     onOpenPairing: () -> Unit = {},
-    onOpenDiagnostics: () -> Unit = {},
+
+    installedVersionName: String? = null,
     homeCustomization: HomeCustomizationStateHolder? = null,
 
     widgetBuilder: WidgetBuilderStateHolder? = null,
@@ -1330,7 +1329,6 @@ fun TvSettingsScreen(
     val ratingsRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val pairingRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val addonsRequesters = remember { mutableMapOf<String, FocusRequester>() }
-    val diagnosticsRequesters = remember { mutableMapOf<String, FocusRequester>() }
 
     val aboutRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val homeRequesters = remember { mutableMapOf<String, FocusRequester>() }
@@ -1715,23 +1713,6 @@ fun TvSettingsScreen(
                                 }
                             },
                         ),
-                        RailSection(
-                            railKey = SettingsRailDiagnostics,
-                            label = "Diagnostics",
-                            content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
-                                SectionActionButton(
-                                    label = "Open diagnostics",
-                                    tag = SettingsDiagnosticsOpen,
-                                    firstKey = DiagnosticsFirstKey,
-                                    requesters = diagnosticsRequesters,
-                                    entryToken = entryToken,
-                                    rememberedKey = rememberedKey,
-                                    onFocusRequested = onFocusRequested,
-                                    onReturnToRail = onReturnToRail,
-                                    onClick = onOpenDiagnostics,
-                                )
-                            },
-                        ),
 
                         RailSection(
                             railKey = SettingsRailAbout,
@@ -1742,6 +1723,7 @@ fun TvSettingsScreen(
                                     entryToken = entryToken,
                                     rememberedKey = rememberedKey,
                                     onFocusRequested = onFocusRequested,
+                                    installedVersionName = installedVersionName,
                                 )
                             },
                         ),

@@ -568,35 +568,6 @@ class AppContainer(
             nowMs = { android.os.SystemClock.elapsedRealtime() },
         )
 
-    fun diagnosticExportStateHolder(): dev.infusion.feature.vertical.diagnostics.DiagnosticExportStateHolder {
-        val installedAddons = try {
-            addonManager.installedAddonIds().size
-        } catch (_: Exception) {
-            0
-        }
-        return dev.infusion.feature.vertical.diagnostics.DiagnosticExportStateHolder(
-            app = dev.infusion.core.network.DiagnosticAppDescriptor("Infusion TV", "0.1.0", 36),
-            counts = {
-                dev.infusion.core.network.DiagnosticCounts(
-                    profiles = 1,
-                    sources = if (jellyfinSource != null) 1 else 0,
-                    addons = installedAddons,
-                )
-            },
-            sourceDiagnostics = { liveSourceDiagnostics() },
-            playerDiagnostics = { latestPlayerSnapshot?.let { listOf(it) } ?: emptyList() },
-            nowMs = { android.os.SystemClock.elapsedRealtime() },
-        )
-    }
-
-    private fun liveSourceDiagnostics(): List<dev.infusion.core.network.RedactedDiagnostic> = buildList {
-        jellyfinSource?.source?.recentDiagnostics()?.let { addAll(it) }
-        for (addonId in addonManager.installedAddonIds()) {
-            val diag = addonManager.runtimeFor(addonId)?.providerState?.lastFailureObservation?.diagnostic
-            if (diag != null) add(diag)
-        }
-    }
-
     val titlePreviewHandoff: dev.infusion.core.domain.preview.TitlePreviewHandoff by lazy {
         dev.infusion.core.domain.preview.InMemoryTitlePreviewHandoff()
     }
@@ -1460,10 +1431,14 @@ class AppContainer(
         )
     }
 
-    private val appVersionLabel: String by lazy {
+    val installedVersionName: String? by lazy {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        }.getOrNull()?.takeIf { it.isNotBlank() } ?: "0.0.0"
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    private val appVersionLabel: String by lazy {
+        installedVersionName ?: "0.0.0"
     }
 
     private val appVersionCode: Long by lazy {

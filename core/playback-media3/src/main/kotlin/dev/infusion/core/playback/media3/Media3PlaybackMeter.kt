@@ -45,6 +45,11 @@ internal class LoggingPlaybackMeter(
     private var summarised = false
     private var lastIdentity: String = IDENTITY_UNKNOWN
 
+    private var resolvedBudget: MeasuredSampleBufferBudget? = null
+
+    private val effectiveTargetBytes: Int?
+        get() = resolvedBudget?.targetBufferBytes ?: sampleBufferTargetBytes
+
     override fun onPrepareStarted() {
         prepareAtMs = elapsedMs()
         val memoryClassMb = runCatching {
@@ -146,8 +151,22 @@ internal class LoggingPlaybackMeter(
                 "highestReqPos=$highestRequestedPosition rebuffers=$rebuffers rebufferMs=$rebufferTotalMs " +
                 "dropped=$droppedFramesTotal livePlayers=${LIVE_PLAYERS.get()} " +
                 "allocatorInUseBytes=$allocatorInUseBytes allocatorPoolBytes=$allocatorPoolBytes " +
-                "allocatorTargetBytes=${sampleBufferTargetBytes ?: "unset"} " +
+                "allocatorTargetBytes=${effectiveTargetBytes ?: "unset"} " +
                 "$memoryFields",
+        )
+    }
+
+    override fun onSampleBufferBudgetResolved(budget: MeasuredSampleBufferBudget) {
+        resolvedBudget = budget
+        log(
+            "meter-budget session=$sessionTag measured=${budget.measured} feasible=${budget.feasible} " +
+                "ceilingBytes=${budget.ceilingBytes} liveHeapBytes=${budget.liveHeapBytes} " +
+                "sampleBufferInUseBytes=${budget.sampleBufferInUseBytes} " +
+                "nonBufferLiveBytes=${budget.nonBufferLiveBytes} headroomBytes=${budget.headroomBytes} " +
+                "normalTargetBytes=${budget.normalTargetBytes} measuredCapBytes=${budget.measuredCapBytes} " +
+                "effectiveTargetBytes=${budget.targetBufferBytes} " +
+                "effectiveTargetMb=${budget.targetBufferBytes / MIB} " +
+                "normalTargetPercent=${budget.normalTargetPercent} reserveBytes=${budget.reserveBytes}",
         )
     }
 
@@ -173,7 +192,7 @@ internal class LoggingPlaybackMeter(
                 } rebuffers=$rebuffers rebufferMs=$rebufferTotalMs dropped=$droppedFramesTotal " +
                 "startupMs=${startupMs() ?: "unknown"} livePlayers=${LIVE_PLAYERS.get()} " +
                 "allocatorInUseBytes=$allocatorInUseBytes allocatorPoolBytes=$allocatorPoolBytes " +
-                "allocatorTargetBytes=${sampleBufferTargetBytes ?: "unset"} " +
+                "allocatorTargetBytes=${effectiveTargetBytes ?: "unset"} " +
                 "$memoryFields $postGcFields",
         )
     }

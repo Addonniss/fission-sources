@@ -128,6 +128,11 @@ internal const val AboutProductSummary: String =
     "INFUSION plays the media you own: files on your network, your own Jellyfin server, and the " +
         "catalogs and streams the add-ons you install provide."
 
+const val SettingsAboutVersionTag = "settings:about:version"
+
+internal fun aboutVersionTitle(installedVersionName: String?): String =
+    installedVersionName?.trim()?.takeIf { it.isNotEmpty() }?.let { "infusion v$it" } ?: "infusion"
+
 internal val AboutLicenceNotices: List<AboutLicenceNotice> = listOf(
     AboutLicenceNotice(
         key = "apache-2.0",
@@ -152,6 +157,7 @@ internal fun AboutSectionContent(
     entryToken: Int,
     rememberedKey: String?,
     onFocusRequested: (String) -> Unit,
+    installedVersionName: String? = null,
 ) {
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -192,7 +198,12 @@ internal fun AboutSectionContent(
     ) {
         Text("About", style = InfusionTvScaleCalibration.Type.Headline)
         AboutPanel {
-            Text("INFUSION", style = InfusionTvScaleCalibration.Type.Headline)
+
+            Text(
+                aboutVersionTitle(installedVersionName),
+                style = InfusionTvScaleCalibration.Type.Headline,
+                modifier = Modifier.testTag(SettingsAboutVersionTag),
+            )
             Text(
                 AboutProductSummary,
                 style = InfusionTvScaleCalibration.Type.SettingsContent,

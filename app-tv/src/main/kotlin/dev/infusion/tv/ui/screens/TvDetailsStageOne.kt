@@ -44,6 +44,7 @@ import dev.infusion.core.model.TitleId
 import dev.infusion.core.model.TitleKind
 import dev.infusion.core.model.metadata.RatingAppearance
 import dev.infusion.core.model.metadata.RatingMetric
+import dev.infusion.feature.vertical.details.detailsRestartActionable
 import dev.infusion.feature.vertical.media.RatingUi
 import dev.infusion.feature.vertical.model.DetailsUiState
 import dev.infusion.feature.vertical.model.EpisodeDetailsUiState
@@ -228,7 +229,8 @@ fun detailsStageActions(
                     action = DetailsStageAction.RESTART,
                     label = TvDetailsActionLabels.Restart,
                     key = DetailsRestartKey,
-                    enabled = state.hasAvailability,
+
+                    enabled = detailsRestartActionable(state.primaryAction),
                     primary = false,
                 ),
             )
@@ -401,7 +403,8 @@ fun episodeStageActions(state: EpisodeDetailsUiState): List<DetailsStageActionIt
             action = DetailsStageAction.RESTART,
             label = TvDetailsActionLabels.Restart,
             key = DetailsRestartKey,
-            enabled = state.hasAvailability,
+
+            enabled = detailsRestartActionable(state.primaryAction),
             primary = false,
         ),
     )

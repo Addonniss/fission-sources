@@ -10,3 +10,6 @@ fun detailsPrimaryAction(
     identityEstablished -> PrimaryAction.PLAY
     else -> PrimaryAction.UNPLAYABLE
 }
+
+fun detailsRestartActionable(primaryAction: PrimaryAction): Boolean =
+    primaryAction != PrimaryAction.UNPLAYABLE

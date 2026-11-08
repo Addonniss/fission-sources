@@ -70,7 +70,6 @@ import dev.infusion.tv.ui.screens.TopLevelDestination
 import dev.infusion.tv.ui.screens.TvCollectionPageScreen
 import dev.infusion.tv.ui.screens.TvCollectionScreen
 import dev.infusion.tv.ui.screens.TvDetailsScreen
-import dev.infusion.tv.ui.screens.TvDiagnosticsScreen
 import dev.infusion.tv.ui.screens.TvEpisodeDetailsScreen
 import dev.infusion.tv.ui.screens.HomeHeroMetadataFactory
 import dev.infusion.tv.ui.screens.TvHomeScreen
@@ -87,7 +86,6 @@ import dev.infusion.tv.ui.screens.TrailerActionKey
 import dev.infusion.tv.ui.screens.TvTopNavModel
 import dev.infusion.tv.ui.screens.TvTrailerScreen
 import dev.infusion.tv.ui.screens.SettingsRailAddons
-import dev.infusion.tv.ui.screens.SettingsRailDiagnostics
 import dev.infusion.tv.ui.screens.SettingsRailGeneral
 import dev.infusion.tv.ui.screens.SettingsRailPairing
 import dev.infusion.tv.ui.screens.TvSeriesDetailsScreen
@@ -293,6 +291,7 @@ object TvRoutes {
     const val PAIRING = "pairing"
     const val DISCOVER = "discover"
     const val SEARCH = "search"
+
     const val DIAGNOSTICS = "diagnostics"
 
     const val DETAILS = "details/{titleId}?resumeMs={resumeMs}"
@@ -662,6 +661,12 @@ private fun TvNavContent(
         }
     }
 
+    ReportNonHomeStartupSurface(
+        navController = navController,
+        gateReady = gate == AddonStartupGate.Ready,
+        surface = coldStartSplash,
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -805,7 +810,7 @@ private fun TvNavContent(
 
             val coldStartSplash = LocalColdStartSplashController.current
             LaunchedEffect(coldStartSplash) {
-                coldStartSplash?.onHomeSurfaceReady()
+                coldStartSplash?.onStartupSurfaceReady()
             }
 
             val homeTileRestore = remember {
@@ -1638,6 +1643,7 @@ private fun TvNavContent(
 
                 selectedSection = settingsSection,
                 onSelectedSectionChange = { settingsSection = it },
+                installedVersionName = container.installedVersionName,
                 onOpenPairing = {
                     settingsSection = SettingsRailPairing
 
@@ -1647,19 +1653,16 @@ private fun TvNavContent(
                 },
 
                 addonsManagement = addonsManagement,
-
-                onOpenDiagnostics = {
-                    settingsSection = SettingsRailDiagnostics
-                    navController.navigate(TvRoutes.DIAGNOSTICS)
-                },
             )
         }
         composable(TvRoutes.DIAGNOSTICS) {
 
-            TvDiagnosticsScreen(
-                holder = container.diagnosticExportStateHolder(),
-                onBack = { navController.popBackStack() },
-                streamLimitObservations = container.streamLimitObservationJournal.toLogLines(),
+            DiagnosticsRestoreTombstone(
+                onRestore = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(TvRoutes.SETTINGS)
+                    }
+                },
             )
         }
 
@@ -2984,6 +2987,26 @@ private fun TvNavContent(
 }
 
 private enum class AddonStartupGate { Loading, Ready, Failed }
+
+@Composable
+internal fun ReportNonHomeStartupSurface(
+    navController: NavHostController,
+    gateReady: Boolean,
+    surface: dev.infusion.tv.ui.shell.ColdStartSplashController?,
+) {
+    LaunchedEffect(navController, gateReady, surface) {
+        if (!gateReady || surface == null) return@LaunchedEffect
+        navController.currentBackStackEntryFlow.collect { entry ->
+
+            if (surface.revealed || surface.startupTerminal) return@collect
+            val route = entry.destination.route ?: return@collect
+
+            if (route == TvRoutes.HOME) return@collect
+            surface.onStartupSurfaceReady()
+            surface.onInitialHeroAbsent()
+        }
+    }
+}
 
 @Composable
 private fun TvAddonsUnavailableSurface() {

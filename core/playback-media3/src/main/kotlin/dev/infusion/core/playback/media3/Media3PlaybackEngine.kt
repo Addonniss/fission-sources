@@ -17,11 +17,11 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -139,18 +139,38 @@ fun interface Media3PlayerFactory {
 }
 
 @UnstableApi
-internal fun sampleBufferBoundedLoadControlBuilder(context: Context): DefaultLoadControl.Builder =
-    sampleBufferBoundedLoadControlBuilder(PlaybackSampleBufferBudget.maxMemoryBytes(context))
+internal fun sampleBufferBoundedLoadControl(
+    context: Context,
+    allocator: DefaultAllocator = DefaultAllocator(
+ true,
+ C.DEFAULT_BUFFER_SEGMENT_SIZE,
+    ),
+    sampleBufferInUseBytes: () -> Long = { 0L },
+    onBudgetResolved: (MeasuredSampleBufferBudget) -> Unit = {},
+): MeasuredSampleBufferLoadControl = MeasuredSampleBufferLoadControl(
+    allocator = allocator,
+    ceilingBytes = PlaybackSampleBufferBudget.maxMemoryBytes(context),
+    sampleBufferInUseBytes = sampleBufferInUseBytes,
+    onBudgetResolved = onBudgetResolved,
+)
 
 @UnstableApi
-internal fun sampleBufferBoundedLoadControlBuilder(maxMemoryBytes: Long): DefaultLoadControl.Builder =
-    DefaultLoadControl.Builder()
-        .setTargetBufferBytes(PlaybackSampleBufferBudget.targetBufferBytes(maxMemoryBytes))
-        .setPrioritizeTimeOverSizeThresholds(false)
-
-@UnstableApi
-internal fun sampleBufferBoundedLoadControl(context: Context): DefaultLoadControl =
-    sampleBufferBoundedLoadControlBuilder(context).build()
+internal fun sampleBufferBoundedLoadControl(
+    ceilingBytes: Long,
+    liveHeapBytes: () -> Long,
+    allocator: DefaultAllocator = DefaultAllocator(
+ true,
+ C.DEFAULT_BUFFER_SEGMENT_SIZE,
+    ),
+    sampleBufferInUseBytes: () -> Long = { 0L },
+    onBudgetResolved: (MeasuredSampleBufferBudget) -> Unit = {},
+): MeasuredSampleBufferLoadControl = MeasuredSampleBufferLoadControl(
+    allocator = allocator,
+    ceilingBytes = ceilingBytes,
+    liveHeapBytes = liveHeapBytes,
+    sampleBufferInUseBytes = sampleBufferInUseBytes,
+    onBudgetResolved = onBudgetResolved,
+)
 
 @UnstableApi
 class Media3PlaybackSession internal constructor(
@@ -223,10 +243,18 @@ class Media3PlaybackSession internal constructor(
 
     private val audioOutputProgressTracker = AudioOutputProgressTracker()
 
-    private val loadControl: DefaultLoadControl by lazy {
-        sampleBufferBoundedLoadControlBuilder(context)
-            .setAllocator(sampleAllocator.allocator)
-            .build()
+    private val loadControl: MeasuredSampleBufferLoadControl by lazy {
+        sampleBufferBoundedLoadControl(
+            context = context,
+            allocator = sampleAllocator.allocator,
+            sampleBufferInUseBytes = {
+
+                val inUse = sampleAllocator.totalBytesAllocated()
+                val pool = sampleAllocator.unusedBytesAllocated()
+                if (inUse < 0 || pool < 0) 0L else (inUse.toLong() + pool.toLong())
+            },
+            onBudgetResolved = { budget -> meter.onSampleBufferBudgetResolved(budget) },
+        )
     }
 
     private val effectivePlayerFactory: Media3PlayerFactory =
