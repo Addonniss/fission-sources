@@ -592,6 +592,8 @@ internal fun consumeDetailsReturn(handle: androidx.lifecycle.SavedStateHandle): 
 
 private const val PERSON_CREDIT_RESTORE_KEY = "person:credit-restore"
 
+private const val PLAYBACK_START_FAILED_MESSAGE = "Playback could not be started."
+
 @Composable
 fun TvNavHost(
     container: AppContainer,
@@ -2727,6 +2729,16 @@ private fun TvNavContent(
                     } catch (setup: dev.infusion.source.aggregation.select.WatchAttemptSetupException) {
                         android.util.Log.w("TvNavHost", "watch attempt setup failed", setup)
                         player.failSetup(setup.message ?: "Playback could not be started.")
+                    } catch (cancel: kotlinx.coroutines.CancellationException) {
+
+                        throw cancel
+                    } catch (failure: Exception) {
+
+                        android.util.Log.w(
+                            "TvNavHost",
+                            "playback start failed (${failure.javaClass.simpleName})",
+                        )
+                        player.failSetup(PLAYBACK_START_FAILED_MESSAGE, candidate)
                     }
                 }
             }
@@ -2932,12 +2944,22 @@ private fun TvNavContent(
 
                         playerScope.launch {
 
-                            player.start(
-                                it,
-                                player.state.value?.positionMs,
-                                sessionId = lineageSessionId,
-                                startMode = startMode,
-                            )
+                            try {
+                                player.start(
+                                    it,
+                                    player.state.value?.positionMs,
+                                    sessionId = lineageSessionId,
+                                    startMode = startMode,
+                                )
+                            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                                throw cancel
+                            } catch (failure: Exception) {
+                                android.util.Log.w(
+                                    "TvNavHost",
+                                    "playback retry failed (${failure.javaClass.simpleName})",
+                                )
+                                player.failSetup(PLAYBACK_START_FAILED_MESSAGE, it)
+                            }
                         }
                     }
                 },

@@ -7,10 +7,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import dev.infusion.core.artworkimage.AnimatedArtworkImage
 import dev.infusion.core.artworkimage.ArtworkImage
 import dev.infusion.core.artworkimage.ArtworkRequest
 import dev.infusion.core.domain.collections.CollectionTileShape
@@ -33,6 +39,8 @@ internal fun collectionTileFocusKey(widgetId: String, groupKey: String, tileKey:
 
 internal fun collectionTilePageId(row: CollectionGroupRow, tile: CollectionTileCard): String =
     CollectionPageId.of(row.packId, row.groupKey, tile.tileKey)
+
+internal val collectionTileFocusArtworkScale: ContentScale = ContentScale.Crop
 
 @Composable
 internal fun CollectionGroupTileRow(
@@ -88,6 +96,8 @@ private fun CollectionTileCardView(
     } else {
         ContentCardShape.LANDSCAPE
     }
+
+    var focused by remember { mutableStateOf(false) }
     CompositionLocalProvider(LocalContentCardPresentation provides effectivePresentation) {
         InfusionMediaCard(
             onClick = onOpen,
@@ -107,15 +117,23 @@ private fun CollectionTileCardView(
             onFocusedKeyChanged = onFocusedKeyChanged,
             shapeOverride = shape,
             artworkLabel = if (hideTitle) tile.title else null,
-        ) {
-            val locator = tile.restingArtworkLocator
-            if (locator != null) {
 
-                val target = contentCardArtworkTarget(null, shapeOverride = shape)
+            onCardFocusChanged = { focused = it },
+        ) {
+            val target = contentCardArtworkTarget(null, shapeOverride = shape)
+            val policy = if (shape == ContentCardShape.PORTRAIT) {
+                ArtworkPolicy.POSTER
+            } else {
+                ArtworkPolicy.BACKDROP
+            }
+            val artworkScale = presentation.artworkContentScaleForShape(shape)
+            val resting = tile.restingArtworkLocator
+            if (resting != null) {
+
                 ArtworkImage(
                     request = ArtworkRequest(
-                        locator = locator,
-                        policy = if (shape == ContentCardShape.PORTRAIT) ArtworkPolicy.POSTER else ArtworkPolicy.BACKDROP,
+                        locator = resting,
+                        policy = policy,
                         targetWidthPx = target.width,
                         targetHeightPx = target.height,
 
@@ -123,10 +141,26 @@ private fun CollectionTileCardView(
                     ),
                     contentDescription = tile.title,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = presentation.artworkContentScaleForShape(shape),
+                    contentScale = artworkScale,
                 )
             }
 
+            val focus = tile.focusLocator
+            if (focused && focus != null) {
+                AnimatedArtworkImage(
+                    request = ArtworkRequest(
+                        locator = focus,
+                        policy = policy,
+                        targetWidthPx = target.width,
+                        targetHeightPx = target.height,
+
+                        retainsPreviousSuccess = false,
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = collectionTileFocusArtworkScale,
+                )
+            }
         }
     }
 }

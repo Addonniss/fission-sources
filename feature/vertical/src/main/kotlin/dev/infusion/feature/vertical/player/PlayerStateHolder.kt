@@ -1157,10 +1157,10 @@ class PlayerStateHolder(
         PlayerForensicsLog.event("recovery-replace-complete", "phase=${_state.value?.phase?.name ?: "none"}")
     }
 
-    fun failSetup(message: String) {
-        val candidate = _state.value?.candidate ?: return
+    fun failSetup(message: String, candidate: dev.infusion.core.model.PlayableCandidate? = null) {
+        val effective = _state.value?.candidate ?: candidate ?: return
         _state.value = PlayerUiState(
-            candidate = candidate,
+            candidate = effective,
             phase = PlaybackState.FAILED,
             positionMs = 0L,
             durationMs = null,

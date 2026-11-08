@@ -2686,16 +2686,8 @@ class AppContainer(
             }
         }
 
-    private val collectionArtworkLimits: dev.infusion.core.network.NetworkLimits =
-        dev.infusion.core.network.NetworkLimits(
-            maxResponseBytes = 6L * 1024 * 1024,
-            maxDecompressedBytes = 6L * 1024 * 1024,
-            maxDecompressionRatio = 8,
-            connectTimeoutMs = 10_000,
-            readTimeoutMs = 20_000,
-            totalTimeoutMs = 30_000,
-            maxRedirects = 2,
-        )
+    private fun collectionArtworkLimitsFor(slot: String): dev.infusion.core.network.NetworkLimits =
+        CollectionArtworkTransport.limitsForSlot(slot)
 
     suspend fun collectionArtwork(
         packId: String,
@@ -2715,12 +2707,17 @@ class AppContainer(
                 ?: return@withContext null
 
             artworkCache.getOrLoad(cacheKey) {
-                resolveCollectionArtwork(reference) { candidate -> fetchCollectionArtwork(candidate) }
+
+                val limits = collectionArtworkLimitsFor(slot)
+                resolveCollectionArtwork(reference) { candidate ->
+                    fetchCollectionArtwork(candidate, limits)
+                }
             }
         }
 
     private suspend fun fetchCollectionArtwork(
         reference: String,
+        limits: dev.infusion.core.network.NetworkLimits,
     ): dev.infusion.core.domain.catalog.CatalogImage? {
         val url = try {
             dev.infusion.core.network.UrlParser.parse(reference)
@@ -2733,7 +2730,7 @@ class AppContainer(
                 dev.infusion.core.network.HardenedRequest(
                     url = url,
                     method = "GET",
-                    limits = collectionArtworkLimits,
+                    limits = limits,
                 ),
             )
         } catch (_: dev.infusion.core.network.NetworkPolicyException) {

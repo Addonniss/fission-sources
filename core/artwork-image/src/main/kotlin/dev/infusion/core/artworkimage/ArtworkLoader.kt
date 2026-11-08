@@ -39,6 +39,8 @@ class ArtworkLoader(
 
     private val sourceVariants: ArtworkSourceVariants = ArtworkSourceVariants.Unchanged,
     private val decoder: ArtworkDecoder = BitmapFactoryArtworkDecoder(),
+
+    private val animatedDecoder: AnimatedArtworkDecoder = ImageDecoderAnimatedArtworkDecoder(),
     private val metrics: ArtworkDecodeMetrics = ArtworkDecodeMetrics.None,
 
     private val loadMetrics: ArtworkLoadMetrics = ArtworkLoadMetrics.None,
@@ -181,6 +183,72 @@ class ArtworkLoader(
         throw c
     } catch (t: Throwable) {
         null
+    }
+
+    private val liveAnimations = java.util.concurrent.atomic.AtomicInteger(0)
+
+    val liveAnimationCount: Int get() = liveAnimations.get()
+
+    suspend fun loadAnimated(request: ArtworkRequest): AnimatedArtwork? {
+        val effective = sourceVariants.resolve(request)
+        val encoded = try {
+            withContext(decodeDispatcher) { bytesSource.bytes(effective) }
+        } catch (c: CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            return null
+        }
+        if (encoded == null || encoded.isEmpty()) return null
+
+        var produced: AnimatedArtwork? = null
+        try {
+            withContext(decodeDispatcher) {
+                val result = animatedDecoder.decode(
+                    encoded = encoded,
+                    targetWidthPx = effective.targetWidthPx,
+                    targetHeightPx = effective.targetHeightPx,
+                )
+                if (result is AnimatedArtworkResult.Animation) produced = result.artwork
+            }
+        } catch (c: CancellationException) {
+            produced?.release()
+            throw c
+        } catch (t: Throwable) {
+            produced?.release()
+            return null
+        }
+        val artwork = produced ?: return null
+        liveAnimations.incrementAndGet()
+        return ReleasedTrackingAnimatedArtwork(artwork) { liveAnimations.decrementAndGet() }
+    }
+
+    private class ReleasedTrackingAnimatedArtwork(
+        private val delegate: AnimatedArtwork,
+        private val onReleased: () -> Unit,
+    ) : AnimatedArtwork {
+
+        private val accounted = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        override val frameCount: Int get() = delegate.frameCount
+        override val intrinsicWidthPx: Int get() = delegate.intrinsicWidthPx
+        override val intrinsicHeightPx: Int get() = delegate.intrinsicHeightPx
+        override val isReleased: Boolean get() = delegate.isReleased
+
+        override var onFrameReady: (() -> Unit)?
+            get() = delegate.onFrameReady
+            set(value) {
+                delegate.onFrameReady = value
+            }
+
+        override fun start() = delegate.start()
+
+        override fun draw(canvas: android.graphics.Canvas, widthPx: Int, heightPx: Int) =
+            delegate.draw(canvas, widthPx, heightPx)
+
+        override fun release() {
+            delegate.release()
+            if (accounted.compareAndSet(false, true)) onReleased()
+        }
     }
 
     private val availabilityLock = Any()

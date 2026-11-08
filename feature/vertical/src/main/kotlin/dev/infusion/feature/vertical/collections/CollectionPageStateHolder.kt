@@ -81,6 +81,8 @@ class CollectionPageStateHolder(
     private val _state = MutableStateFlow(CollectionPageUiState())
     val state: StateFlow<CollectionPageUiState> = _state.asStateFlow()
 
+    val rowNavigationMemory: CollectionPageRowNavigationMemory = CollectionPageRowNavigationMemory()
+
     init {
         scope.launch(ioDispatcher) {
             preferencesChanges.collect { reapplyRowPreferences() }

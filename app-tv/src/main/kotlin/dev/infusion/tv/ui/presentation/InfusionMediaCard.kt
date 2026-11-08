@@ -15,6 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -60,6 +61,8 @@ fun InfusionMediaCard(
     contextSurface: CardActionSurface = CardActionSurface.BROWSE,
 
     contextMenuEnabled: Boolean = true,
+
+    onCardFocusChanged: ((Boolean) -> Unit)? = null,
     artwork: @Composable BoxScope.() -> Unit,
 ) {
 
@@ -187,6 +190,8 @@ fun InfusionMediaCard(
 
     var cardFocused by remember { mutableStateOf(false) }
 
+    val reportedCardFocus = rememberUpdatedState(onCardFocusChanged)
+
     val showContextMenuHint = contextMenuHintVisible(
         focused = cardFocused,
         menuAvailable = contextRequest != null,
@@ -216,7 +221,10 @@ fun InfusionMediaCard(
             )
             .then(contextModifier)
 
-            .onFocusChanged { state -> cardFocused = state.isFocused }
+            .onFocusChanged { state ->
+                cardFocused = state.isFocused
+                reportedCardFocus.value?.invoke(state.isFocused)
+            }
 
             .then(progressVisibilityModifier),
 

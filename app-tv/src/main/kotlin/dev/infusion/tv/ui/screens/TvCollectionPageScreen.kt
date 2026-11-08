@@ -46,6 +46,7 @@ import dev.infusion.core.artworkimage.ArtworkRequest
 import dev.infusion.core.model.ArtworkPolicy
 import dev.infusion.core.model.MediaArtworkRef
 import dev.infusion.core.model.MediaPreview
+import dev.infusion.feature.vertical.collections.CollectionPageRowNavigationMemory
 import dev.infusion.feature.vertical.collections.CollectionPageRowUi
 import dev.infusion.feature.vertical.collections.CollectionPageStateHolder
 import dev.infusion.feature.vertical.collections.CollectionPageUiState
@@ -68,6 +69,9 @@ import dev.infusion.tv.ui.presentation.TvBrowseRowSpacingDp
 import dev.infusion.tv.ui.presentation.artworkTargetPx
 import dev.infusion.tv.ui.presentation.hideWatchedShelf
 import dev.infusion.tv.ui.presentation.IdentityMetadataState
+import dev.infusion.tv.ui.presentation.RowMemoryStore
+import dev.infusion.tv.ui.presentation.RowViewport
+import dev.infusion.tv.ui.presentation.RowViewportMemory
 import dev.infusion.tv.ui.presentation.rememberRowPaging
 import dev.infusion.tv.ui.presentation.rememberTvBrowseListState
 import dev.infusion.tv.ui.presentation.tvBrowseNonRailInset
@@ -191,6 +195,8 @@ fun TvCollectionPageScreen(
     focusRestoreKey: String? = null,
 ) {
     val state by stateHolder.state.collectAsStateWithLifecycle()
+
+    val rowMemory = remember(stateHolder) { stateHolder.rowNavigationMemory.asRowMemoryStore() }
     val requesters = rememberFocusRequesters()
     val pageScope = rememberCoroutineScope()
     val heroMetadata = remember(pageScope) { HomeHeroMetadataStateHolder(pageScope, heroMetadataFactory) }
@@ -348,6 +354,8 @@ fun TvCollectionPageScreen(
                 pageOwnsVerticalFraming = true,
 
                 sharedRowRules = true,
+
+                rememberedRowMemory = rowMemory,
                 contentPadding = contentPadding,
                 header = {
                     CollectionPageHero(
@@ -581,3 +589,22 @@ private fun CollectionPageRow(
 }
 
 private const val COLLECTION_PAGE_CONTEXT_KEY = "collection-page:context"
+
+private fun CollectionPageRowNavigationMemory.asRowMemoryStore(): RowMemoryStore {
+
+    val memory = this
+    return object : RowMemoryStore, RowViewportMemory {
+        override fun rememberedItem(rowKey: Any): String? =
+            memory.rememberedItem(rowKey.toString())
+
+        override fun rememberItem(rowKey: Any, itemKey: String) =
+            memory.rememberItem(rowKey.toString(), itemKey)
+
+        override fun rememberedViewport(rowKey: Any): RowViewport? =
+            memory.viewport(rowKey.toString())
+                ?.let { row -> RowViewport(row.leadingKey, row.leadingOffsetPx) }
+
+        override fun rememberViewport(rowKey: Any, viewport: RowViewport) =
+            memory.rememberViewport(rowKey.toString(), viewport.leadingKey, viewport.leadingOffsetPx)
+    }
+}
