@@ -459,7 +459,7 @@ internal const val ExitDialogPanelTag = "exit-dialog-panel"
 
 internal const val ExitDialogRootTag = "exit-dialog-root"
 
-internal const val ExitDialogTitle = "Exit infusion?"
+internal const val ExitDialogTitle = "Exit fission?"
 
 @Composable
 fun TvExitConfirmationDialog(

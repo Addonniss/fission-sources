@@ -190,11 +190,11 @@ private fun TvActionButton(
 }
 
 internal fun title(state: UpdateState): String = when (state) {
-    is UpdateState.Available -> "INFUSION ${state.candidate.versionName} is available"
+    is UpdateState.Available -> "fission ${state.candidate.versionName} is available"
     is UpdateState.Downloading,
     is UpdateState.Verifying,
     is UpdateState.ReadyToInstall,
-    -> "Updating INFUSION"
+    -> "Updating fission"
     is UpdateState.NeedsPermission -> "Permission needed"
     is UpdateState.Failed -> "Update problem"
     else -> "App update"
@@ -211,7 +211,7 @@ internal fun message(state: UpdateState): String? = when (state) {
         }
     is UpdateState.Verifying -> "Verifying the update…"
     is UpdateState.ReadyToInstall -> "Confirm the install in the system dialog."
-    is UpdateState.NeedsPermission -> "Allow INFUSION to install apps, then come back."
+    is UpdateState.NeedsPermission -> "Allow fission to install apps, then come back."
     is UpdateState.Failed -> state.kind.message
     else -> null
 }

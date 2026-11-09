@@ -97,13 +97,13 @@ internal val AboutServiceCredits: List<AboutCreditGroup> = listOf(
             ),
             AboutCreditLine(
                 name = "Jellyfin",
-                detail = "browsing and playback from your own Jellyfin server. INFUSION is not " +
+                detail = "browsing and playback from your own Jellyfin server. fission is not " +
                     "affiliated with, or endorsed by, the Jellyfin project.",
             ),
             AboutCreditLine(
                 name = "Simkl, Trakt and MDBList",
                 detail = "optional watch-tracking accounts you connect yourself and can disconnect " +
-                    "at any time. INFUSION is not affiliated with, or endorsed by, any of them.",
+                    "at any time. fission is not affiliated with, or endorsed by, any of them.",
             ),
             AboutCreditLine(
                 name = "TheIntroDB and IntroDB.app",
@@ -112,7 +112,7 @@ internal val AboutServiceCredits: List<AboutCreditGroup> = listOf(
             AboutCreditLine(
                 name = "Add-ons",
                 detail = "the add-ons you install use the Stremio-compatible add-on protocol. Their " +
-                    "catalogs, metadata and streams belong to their authors; INFUSION is not " +
+                    "catalogs, metadata and streams belong to their authors; fission is not " +
                     "affiliated with Stremio or with any add-on provider.",
             ),
         ),
@@ -120,18 +120,18 @@ internal val AboutServiceCredits: List<AboutCreditGroup> = listOf(
 )
 
 internal const val AboutIndependenceNotice: String =
-    "INFUSION is an independent personal project. Third-party names and marks belong to their " +
+    "fission is an independent personal project. Third-party names and marks belong to their " +
         "owners, and no endorsement by any project or service credited on this page is claimed or " +
         "implied."
 
 internal const val AboutProductSummary: String =
-    "INFUSION plays the media you own: files on your network, your own Jellyfin server, and the " +
+    "fission plays the media you own: files on your network, your own Jellyfin server, and the " +
         "catalogs and streams the add-ons you install provide."
 
 const val SettingsAboutVersionTag = "settings:about:version"
 
 internal fun aboutVersionTitle(installedVersionName: String?): String =
-    installedVersionName?.trim()?.takeIf { it.isNotEmpty() }?.let { "infusion v$it" } ?: "infusion"
+    installedVersionName?.trim()?.takeIf { it.isNotEmpty() }?.let { "fission v$it" } ?: "fission"
 
 internal val AboutLicenceNotices: List<AboutLicenceNotice> = listOf(
     AboutLicenceNotice(

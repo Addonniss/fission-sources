@@ -143,7 +143,7 @@ class JellyfinClient(
     private val origin: CanonicalUrl,
     private val transport: HardenedHttpClient,
     private val deviceId: String? = null,
-    private val clientName: String = "Infusion",
+    private val clientName: String = "fission",
     private val clientVersion: String = "0.1.0",
     private val retryPolicy: JellyfinRetryPolicy = JellyfinRetryPolicy(),
 ) : java.io.Closeable {

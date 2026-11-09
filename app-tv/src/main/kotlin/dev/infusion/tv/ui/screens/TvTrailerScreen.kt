@@ -58,7 +58,7 @@ internal const val TrailerVideoAreaTag = "trailer-video-area"
 internal const val TrailerBackKey = "trailer-back"
 
 internal const val TrailerLoadingCopy = "Loading trailer…"
-internal const val TrailerUnsupportedCopy = "This trailer can't play inside INFUSION."
+internal const val TrailerUnsupportedCopy = "This trailer can't play inside fission."
 internal const val TrailerFailureCopy = "Couldn't play the trailer."
 internal const val TrailerUnavailableCopy = "The trailer is unavailable right now."
 

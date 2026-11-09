@@ -34,7 +34,7 @@ const val ColdStartSplashTag: String = "cold-start-splash"
 
 const val ColdStartSplashWordTag: String = "cold-start-splash-word"
 
-const val ColdStartSplashWord: String = "infusion"
+const val ColdStartSplashWord: String = "fission"
 
 const val ColdStartSplashAccentLetter: String = "s"
 
@@ -167,7 +167,8 @@ internal fun coldStartSplashWord(
     light: Color = InfusionTvAppearance.TextPrimary,
     weight: FontWeight = ColdStartSplashWordWeight,
 ): AnnotatedString {
-    val accentIndex = ColdStartSplashWord.indexOf(ColdStartSplashAccentLetter)
+
+    val accentIndex = ColdStartSplashWord.lastIndexOf(ColdStartSplashAccentLetter)
     return buildAnnotatedString {
         withStyle(SpanStyle(color = light, fontWeight = weight)) {
             append(ColdStartSplashWord.take(accentIndex))

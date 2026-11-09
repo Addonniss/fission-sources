@@ -336,12 +336,12 @@ private const val TRACKING_MDBLIST_ID: String = "mdblist"
 const val TRACKING_SELECTION_TITLE: String = "Watch tracking"
 
 const val TRACKING_THIS_DEVICE_SUBTITLE: String =
-    "INFUSION always records what you watch here. This cannot be turned off."
+    "fission always records what you watch here. This cannot be turned off."
 
 const val TRACKING_LOCAL_LABEL: String = "Local"
 
 const val TRACKING_ON_DEVICE_ONLY_SUBTITLE: String =
-    "Nothing is sent to a service and nothing is imported. INFUSION still records what " +
+    "Nothing is sent to a service and nothing is imported. fission still records what " +
         "you watch here, and your Jellyfin server is unaffected."
 
 fun trackingSelectionSubtitle(
@@ -356,7 +356,7 @@ fun trackingSelectionSubtitle(
     return when {
         halves == null || (halves.sends && halves.reads) ->
             "$name receives playback progress and watched marks from now on, and supplies " +
-                "progress and watched state for INFUSION to read."
+                "progress and watched state for fission to read."
         halves.sends ->
             "$name receives playback progress and watched marks from now on. " +
                 "$name does not supply progress or watched state."
@@ -392,7 +392,7 @@ fun trackingUserChoiceCountLine(state: TrackingSettingsUiState): String? {
 fun trackingSelectionNotice(state: TrackingSettingsUiState): String? = when {
     state.selectedTrackerUnavailable -> {
         val name = state.selectedTracker?.displayName ?: state.selectedTrackerId.orEmpty()
-        "$name is not connected. It stays your chosen service. INFUSION is using your " +
+        "$name is not connected. It stays your chosen service. fission is using your " +
             "history on this device" + (if (state.jellyfinConnected) " and your Jellyfin server" else "") +
             ". Choosing another service here is the only way it changes."
     }

@@ -206,7 +206,7 @@ class SimklHttpClient(
     }
 
     fun buildHeaders(request: SimklRequest, accessToken: String?): Map<String, String> = buildMap {
-        put("User-Agent", "INFUSION/${configuration.appVersion}")
+        put("User-Agent", "fission/${configuration.appVersion}")
         put("Accept", "application/json")
         if (request.authenticated && !accessToken.isNullOrBlank()) {
             put("Authorization", "Bearer $accessToken")

@@ -128,7 +128,7 @@ class JellyfinTransportResolver(
     companion object {
 
         private const val DEFAULT_EMBY_AUTH_HEADER =
-            "MediaBrowser Client=\"Infusion\", Device=\"Android\", DeviceId=\"infusion\", Version=\"0.1.0\""
+            "MediaBrowser Client=\"fission\", Device=\"Android\", DeviceId=\"infusion\", Version=\"0.1.0\""
     }
 
     fun requestFor(candidate: PlayableCandidate, lineage: SessionLineage): TransportRequest =

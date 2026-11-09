@@ -41,6 +41,8 @@ section {
 
 h1 { font-size: 1.35rem; margin: 0 0 4px; letter-spacing: -0.01em; }
 
+header.bar h1 { font-variant-ligatures: none; }
+
 .wordmark-s { color: var(--wordmark-s); }
 h2 { font-size: 1.1rem; margin: 20px 0 8px; letter-spacing: -0.01em; }
 h3 { font-size: 0.85rem; margin: 18px 0 6px; color: var(--muted);

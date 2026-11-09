@@ -8,7 +8,7 @@ internal object SettingsRowHelp {
     internal object General {
 
         const val Accent =
-            "Sets the highlight colour used for focus, selection and accents throughout INFUSION."
+            "Sets the highlight colour used for focus, selection and accents throughout fission."
 
         const val TopShelfAppearance =
             "Shows the top bar's destinations as text only, as icons only, or as both."
@@ -36,7 +36,7 @@ internal object SettingsRowHelp {
             "Hides titles you have finished from browsing rows. Their history is kept."
 
         const val ShowProviderName =
-            "Adds the source's name to the title of the Home rows it supplies. Rows INFUSION " +
+            "Adds the source's name to the title of the Home rows it supplies. Rows fission " +
                 "builds itself, such as Continue Watching, are not renamed."
 
         const val CardBadges =
@@ -250,7 +250,7 @@ internal object SettingsRowHelp {
 
         fun connected(accountLabel: String?, refreshAt: String?): String = buildString {
             append(if (accountLabel != null) "Connected as $accountLabel." else "Connected.")
-            append(" INFUSION renews this sign-in automatically.")
+            append(" fission renews this sign-in automatically.")
             if (refreshAt != null) {
                 append(" The saved sign-in can be renewed until $refreshAt; after that, connect again.")
             }
@@ -267,7 +267,7 @@ internal object SettingsRowHelp {
 
         const val Credentials =
             "Signs in with your Jellyfin server address, username and password. Test connection " +
-                "checks them without saving anything; Save replaces the source INFUSION uses."
+                "checks them without saving anything; Save replaces the source fission uses."
 
         const val ApiKey =
             "Connects with an API key from your Jellyfin server, then uses the Jellyfin user you " +
@@ -309,7 +309,7 @@ internal object SettingsRowHelp {
                     state.phase == Phase.FAILED ->
                         append(" The last test failed, so no configuration of this one is in force.")
                     else ->
-                        append(" Not configured yet, so INFUSION cannot send requests to it.")
+                        append(" Not configured yet, so fission cannot send requests to it.")
                 }
             }
     }
@@ -321,7 +321,7 @@ internal object SettingsRowHelp {
                 "profiles."
 
         const val Switch =
-            "Makes this the profile INFUSION uses. A profile with a PIN asks for it first."
+            "Makes this the profile fission uses. A profile with a PIN asks for it first."
 
         const val Rename = "Changes this profile's name. Everything saved in the profile stays."
 

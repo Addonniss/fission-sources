@@ -188,7 +188,7 @@ class MDBListTrackingGraph(
 
     private companion object {
 
-        const val APP_NAME = "INFUSION"
+        const val APP_NAME = "fission"
 
         const val TRACE_TAG = "INFUSION-TRACKING"
     }

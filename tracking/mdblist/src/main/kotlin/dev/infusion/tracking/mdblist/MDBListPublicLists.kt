@@ -218,7 +218,7 @@ class MDBListPublicLists(
 
         const val DEFAULT_API_BASE_URL: String = "https://api.mdblist.com"
 
-        const val DEFAULT_USER_AGENT: String = "Infusion/1.0"
+        const val DEFAULT_USER_AGENT: String = "fission/1.0"
 
         internal const val SHAPE_CHANGED = "mdblist_response_shape_changed"
 

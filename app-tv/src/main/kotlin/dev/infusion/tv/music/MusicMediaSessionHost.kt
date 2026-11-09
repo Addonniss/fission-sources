@@ -224,7 +224,7 @@ class MusicSessionPlayer(
     private fun metadata(): MediaMetadata {
         val current = holder.state.value.current
         return MediaMetadata.Builder()
-            .setTitle(current?.title ?: "INFUSION music")
+            .setTitle(current?.title ?: "fission music")
             .setArtist(current?.artist ?: current?.albumName)
             .setAlbumTitle(current?.albumName)
             .setIsBrowsable(false)

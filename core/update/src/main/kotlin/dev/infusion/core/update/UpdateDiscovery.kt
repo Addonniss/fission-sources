@@ -108,7 +108,8 @@ class GitHubReleaseDiscovery(
     private companion object {
 
         const val OWNER = "Addonniss"
-        const val REPO = "infusion-releases"
+
+        const val REPO = "fission-releases"
 
         const val RELEASES_URL = "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=30"
 

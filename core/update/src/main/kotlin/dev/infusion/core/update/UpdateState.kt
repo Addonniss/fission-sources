@@ -15,7 +15,7 @@ enum class UpdateFailureKind(
 
     CHECKSUMS_UNAVAILABLE("The update's checksum couldn't be verified.", retryable = false),
 
-    PACKAGE_MISMATCH("This update isn't for INFUSION TV.", retryable = false),
+    PACKAGE_MISMATCH("This update isn't for fission TV.", retryable = false),
 
     VERSION_MISMATCH("This update's version doesn't match its release.", retryable = false),
 
@@ -27,7 +27,7 @@ enum class UpdateFailureKind(
 
     INSUFFICIENT_STORAGE("Not enough storage for the update.", retryable = true),
 
-    INSTALL_PERMISSION_MISSING("INFUSION isn't allowed to install apps.", retryable = false),
+    INSTALL_PERMISSION_MISSING("fission isn't allowed to install apps.", retryable = false),
 
     INSTALL_FAILED("The install didn't complete.", retryable = true),
 }

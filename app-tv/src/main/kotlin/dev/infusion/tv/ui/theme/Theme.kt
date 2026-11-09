@@ -8,6 +8,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Typography
@@ -47,7 +48,25 @@ fun InfusionTvTheme(
 
 val LocalTvTopShelfAppearance = compositionLocalOf { TopShelfAppearance.DEFAULT }
 
-fun infusionTvTypography(): Typography = Typography(
-    bodyLarge = InfusionTvScaleCalibration.Type.Body,
-    labelLarge = InfusionTvScaleCalibration.Type.Emphasis,
-)
+fun infusionTvTypography(): Typography = Typography().let { library ->
+    Typography(
+        bodyLarge = InfusionTvScaleCalibration.Type.Body,
+        labelLarge = InfusionTvScaleCalibration.Type.Emphasis,
+        displayLarge = library.displayLarge.withProductFontFeatures(),
+        displayMedium = library.displayMedium.withProductFontFeatures(),
+        displaySmall = library.displaySmall.withProductFontFeatures(),
+        headlineLarge = library.headlineLarge.withProductFontFeatures(),
+        headlineMedium = library.headlineMedium.withProductFontFeatures(),
+        headlineSmall = library.headlineSmall.withProductFontFeatures(),
+        titleLarge = library.titleLarge.withProductFontFeatures(),
+        titleMedium = library.titleMedium.withProductFontFeatures(),
+        titleSmall = library.titleSmall.withProductFontFeatures(),
+        bodyMedium = library.bodyMedium.withProductFontFeatures(),
+        bodySmall = library.bodySmall.withProductFontFeatures(),
+        labelMedium = library.labelMedium.withProductFontFeatures(),
+        labelSmall = library.labelSmall.withProductFontFeatures(),
+    )
+}
+
+private fun TextStyle.withProductFontFeatures() =
+    copy(fontFeatureSettings = InfusionTvFontFeatureSettings)

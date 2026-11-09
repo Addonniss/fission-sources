@@ -5,6 +5,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 
+const val InfusionTvFontFeatureSettings: String = "\"liga\" 0"
+
 object InfusionTvScaleCalibration {
 
     fun ofScreenWidth(fraction: Float, heroMeasure: Dp): Dp =
@@ -23,6 +25,7 @@ object InfusionTvScaleCalibration {
             fontSize = FontSize,
             lineHeight = LineHeight,
             letterSpacing = LetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         const val MaxLines = 4
@@ -55,6 +58,7 @@ object InfusionTvScaleCalibration {
             fontSize = HeadlineFontSize,
             lineHeight = HeadlineLineHeight,
             letterSpacing = HeadlineLetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         val Body: TextStyle = TextStyle(
@@ -62,6 +66,7 @@ object InfusionTvScaleCalibration {
             fontSize = Synopsis.FontSize,
             lineHeight = Synopsis.LineHeight,
             letterSpacing = Synopsis.LetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         val Emphasis: TextStyle = TextStyle(
@@ -69,6 +74,7 @@ object InfusionTvScaleCalibration {
             fontSize = EmphasisFontSize,
             lineHeight = EmphasisLineHeight,
             letterSpacing = EmphasisLetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         val Headline: TextStyle = TextStyle(
@@ -76,6 +82,7 @@ object InfusionTvScaleCalibration {
             fontSize = HeadlineFontSize,
             lineHeight = HeadlineLineHeight,
             letterSpacing = HeadlineLetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         val Display: TextStyle = TextStyle(
@@ -83,6 +90,7 @@ object InfusionTvScaleCalibration {
             fontSize = DisplayFontSize,
             lineHeight = DisplayLineHeight,
             letterSpacing = DisplayLetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         val DisplayNormal: TextStyle = TextStyle(
@@ -90,6 +98,7 @@ object InfusionTvScaleCalibration {
             fontSize = DisplayFontSize,
             lineHeight = DisplayLineHeight,
             letterSpacing = DisplayLetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         val HeadlineNormal: TextStyle = TextStyle(
@@ -97,6 +106,7 @@ object InfusionTvScaleCalibration {
             fontSize = HeadlineFontSize,
             lineHeight = HeadlineLineHeight,
             letterSpacing = HeadlineLetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         val Title: TextStyle = TextStyle(
@@ -104,6 +114,7 @@ object InfusionTvScaleCalibration {
             fontSize = EmphasisFontSize,
             lineHeight = EmphasisLineHeight,
             letterSpacing = EmphasisLetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
 
         val SourceRow: TextStyle = TextStyle(
@@ -111,6 +122,7 @@ object InfusionTvScaleCalibration {
             fontSize = EmphasisFontSize,
             lineHeight = EmphasisLineHeight,
             letterSpacing = EmphasisLetterSpacing,
+            fontFeatureSettings = InfusionTvFontFeatureSettings,
         )
     }
 
