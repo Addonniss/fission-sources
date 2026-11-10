@@ -1,6 +1,6 @@
-# infusion — Android TV
+# fission — Android TV
 
-INFUSION is a personal-media application for **Android TV**, built around a
+fission is a personal-media application for **Android TV**, built around a
 remote-first, D-pad-driven television interface. It plays your own media and the
 media your connected services expose, and it keeps metadata in one canonical model
 that every screen reads, whoever supplied it.
@@ -83,27 +83,32 @@ repository: it builds the application, it does not carry its test suites.
 ## Status
 
 Pre-alpha, under active development. The current source snapshot corresponds to
-version **0.1.1** (`versionCode` 101). Behaviour, interface details and internal
+version **0.1.4** (`versionCode` 104). Behaviour, interface details and internal
 structure can still change between snapshots; there is no stability guarantee yet.
 
 ## License
 
-INFUSION's original application source code is licensed under the GNU General Public License version 3.0 (GPL-3.0-only). See [LICENSE](LICENSE).
+fission's original application source code is licensed under the GNU General Public License version 3.0 (GPL-3.0-only). See [LICENSE](LICENSE).
 
 You are free to use, study, modify, and redistribute the GPL-covered application code under the terms of that license.
 
-The INFUSION name, logos, and original branding are not granted for independent trademark use by the GPL software license. Any separately licensed artwork or other assets must be identified explicitly.
+The fission name, logos, and original branding are not granted for independent trademark use by the GPL software license. Any separately licensed artwork or other assets must be identified explicitly.
 
-Third-party components retain their respective licenses and attribution requirements. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), [THIRD-PARTY-SOURCE-NOTICES.md](THIRD-PARTY-SOURCE-NOTICES.md), and the [public notices page](https://infusionplayer.stream/notices/).
+Third-party components retain their respective licenses and attribution requirements. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), [THIRD-PARTY-SOURCE-NOTICES.md](THIRD-PARTY-SOURCE-NOTICES.md), and the [public notices page](https://fissionplayer.stream/notices/).
 
 ## Related repositories
 
-- **[infusion-releases](https://github.com/Addonniss/infusion-releases)** — signed,
-  installable Android TV builds, release notes and the update channel the
-  application checks.
+- **[fission-releases](https://github.com/Addonniss/fission-releases)** — the official
+  release repository for new versions; the update channel used by v0.1.4 and newer.
+- **[infusion-releases](https://github.com/Addonniss/infusion-releases)** — the
+  historical release archive, including v0.1.4 and earlier APKs; retained for
+  compatibility with installations at v0.1.3 and older.
+- **[fission website](https://fissionplayer.stream/)** — official information,
+  [downloads](https://fissionplayer.stream/download/), and [release history](https://fissionplayer.stream/releases/).
 
-This repository is the **source**; it does not host installable builds. Use
-`infusion-releases` for those.
+This repository contains source code, not installable builds. For the current
+installer and its checksum, use the [fission download page](https://fissionplayer.stream/download/).
+Historical downloads remain available in the legacy release archive.
 
 ## Security
 
