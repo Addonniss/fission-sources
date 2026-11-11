@@ -5,6 +5,7 @@ import dev.infusion.core.domain.appearance.AppearancePreferenceStore
 import dev.infusion.core.domain.appearance.ArtworkStyle
 import dev.infusion.core.domain.appearance.ProfileAppearancePreferences
 import dev.infusion.core.domain.appearance.SplashScreenMode
+import dev.infusion.core.domain.appearance.ThemePreset
 import dev.infusion.core.domain.appearance.TmdbBackdropQuality
 import dev.infusion.core.domain.appearance.TmdbLandscapeCardQuality
 import dev.infusion.core.domain.appearance.TopShelfAppearance
@@ -71,6 +72,9 @@ class ProfileAppearanceStateHolder(
         update { it.copy(tmdbLandscapeCardQuality = quality) }
 
     fun setContextMenuBadge(enabled: Boolean) = update { it.copy(contextMenuBadge = enabled) }
+
+    fun selectTheme(theme: ThemePreset) =
+        update { it.copy(theme = theme, accent = AccentColor.THEME) }
 
     private fun update(transform: (ProfileAppearancePreferences) -> ProfileAppearancePreferences) {
         val profileId = profileScope.activeProfileId

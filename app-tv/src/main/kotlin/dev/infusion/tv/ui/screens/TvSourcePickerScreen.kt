@@ -44,8 +44,10 @@ import dev.infusion.tv.ui.theme.InfusionTvContour
 import dev.infusion.tv.ui.theme.InfusionTvDetailsMetrics
 import dev.infusion.tv.ui.theme.InfusionTvMotion
 import dev.infusion.tv.ui.theme.LocalInfusionAccent
+import dev.infusion.tv.ui.theme.LocalInfusionTheme
 import dev.infusion.tv.ui.theme.infusionTvCardScale
 import dev.infusion.tv.ui.theme.infusionTvCardShape
+import dev.infusion.tv.ui.theme.themeControlBackdrop
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardBorder
@@ -408,6 +410,18 @@ private fun clearLogoFractionForLeftRegion(leftRegionWidth: Dp, pageWidth: Dp): 
 
 @Composable
 private fun sourceRowCardColors(): CardColors {
+
+    val tokens = LocalInfusionTheme.current
+    if (tokens.premium) {
+        return CardDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = tokens.textPrimary,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = tokens.onAccent,
+            pressedContainerColor = Color.Transparent,
+            pressedContentColor = tokens.onAccent,
+        )
+    }
     val focused = InfusionTvContour.treatment(InfusionControlState.FOCUSED, LocalInfusionAccent.current)
     return CardDefaults.colors(
         containerColor = Color.Transparent,
@@ -426,8 +440,12 @@ private fun sourceRowCardBorder(): CardBorder = CardDefaults.border(
     pressedBorder = Border.None,
 )
 
-private fun sourceRowContentColor(focused: Boolean): Color =
-    if (focused) InfusionTvContour.FocusedContentColor else InfusionTvContour.CardContentColor
+@Composable
+private fun sourceRowContentColor(focused: Boolean): Color {
+    val tokens = LocalInfusionTheme.current
+    if (tokens.premium) return if (focused) tokens.onAccent else tokens.textPrimary
+    return if (focused) InfusionTvContour.FocusedContentColor else InfusionTvContour.CardContentColor
+}
 
 @Composable
 private fun CandidateRow(
@@ -461,6 +479,8 @@ private fun CandidateRow(
         interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()
+
+            .themeControlBackdrop(focused = focused)
 
             .semantics {
                 if (candidate != null) {

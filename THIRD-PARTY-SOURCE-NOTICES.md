@@ -1,6 +1,6 @@
 # Third-party source notices
 
-This repository is a source snapshot of INFUSION's Android TV application. The
+This repository is a source snapshot of fission's Android TV application. The
 project's general third-party notices — the components the application is built
 from, the services it talks to, and the full licence texts — are in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
@@ -12,7 +12,7 @@ only comments kept in this snapshot.
 
 ## `app-tv/src/main/kotlin/dev/infusion/tv/ui/screens/TvPlayerOverlay.kt`
 
-The playback overlay is materially adapted, in INFUSION's own design tokens, from
+The playback overlay is materially adapted, in fission's own design tokens, from
 the JetStream sample:
 
 - **android/tv-samples** — `JetStreamCompose`, <https://github.com/android/tv-samples/tree/main/JetStreamCompose>

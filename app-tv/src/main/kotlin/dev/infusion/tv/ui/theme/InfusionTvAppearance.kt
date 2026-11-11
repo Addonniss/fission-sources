@@ -41,6 +41,8 @@ object InfusionTvAppearance {
     val ErrorText = Color(0xFFFFB4AB)
 
     val AccentPalette: Map<AccentColor, Color> = mapOf(
+
+        AccentColor.THEME to SelectionOrange,
         AccentColor.ORANGE to SelectionOrange,
         AccentColor.RED to Color(0xFFFF5A4D),
         AccentColor.AMBER to Color(0xFFFFC107),
@@ -143,36 +145,65 @@ data class InfusionControlTreatment(
     val contourWidth: Dp?,
 )
 
-fun infusionTvColorScheme(accent: Color): androidx.tv.material3.ColorScheme = darkColorScheme(
+fun infusionTvColorScheme(accent: Color): androidx.tv.material3.ColorScheme =
+    buildInfusionTvColorScheme(
+        accent = accent,
+        background = InfusionTvAppearance.OledBlack,
+        panel = InfusionTvAppearance.Panel,
+        textPrimary = InfusionTvAppearance.TextPrimary,
+        panelBorder = InfusionTvAppearance.PanelBorder,
+        scrim = Color(0xE6000000),
+    )
+
+private fun buildInfusionTvColorScheme(
+    accent: Color,
+    background: Color,
+    panel: Color,
+    textPrimary: Color,
+    panelBorder: Color,
+    scrim: Color,
+): androidx.tv.material3.ColorScheme = darkColorScheme(
     primary = accent,
     onPrimary = InfusionTvAppearance.OledBlack,
     primaryContainer = accent,
     onPrimaryContainer = InfusionTvAppearance.OledBlack,
     inversePrimary = accent,
-    secondary = InfusionTvAppearance.TextPrimary,
+    secondary = textPrimary,
     onSecondary = InfusionTvAppearance.OledBlack,
-    secondaryContainer = InfusionTvAppearance.Panel,
-    onSecondaryContainer = InfusionTvAppearance.TextPrimary,
-    tertiary = InfusionTvAppearance.TextPrimary,
+    secondaryContainer = panel,
+    onSecondaryContainer = textPrimary,
+    tertiary = textPrimary,
     onTertiary = InfusionTvAppearance.OledBlack,
-    tertiaryContainer = InfusionTvAppearance.Panel,
-    onTertiaryContainer = InfusionTvAppearance.TextPrimary,
-    background = InfusionTvAppearance.OledBlack,
-    onBackground = InfusionTvAppearance.TextPrimary,
-    surface = InfusionTvAppearance.OledBlack,
-    onSurface = InfusionTvAppearance.TextPrimary,
-    surfaceVariant = InfusionTvAppearance.Panel,
-    onSurfaceVariant = InfusionTvAppearance.TextPrimary,
-    surfaceTint = InfusionTvAppearance.OledBlack,
-    inverseSurface = InfusionTvAppearance.TextPrimary,
+    tertiaryContainer = panel,
+    onTertiaryContainer = textPrimary,
+    background = background,
+    onBackground = textPrimary,
+    surface = background,
+    onSurface = textPrimary,
+    surfaceVariant = panel,
+    onSurfaceVariant = textPrimary,
+    surfaceTint = background,
+    inverseSurface = textPrimary,
     inverseOnSurface = InfusionTvAppearance.OledBlack,
     error = InfusionTvAppearance.ErrorText,
     onError = InfusionTvAppearance.OledBlack,
     errorContainer = Color(0xFF8C1D18),
     onErrorContainer = Color(0xFFFFDAD6),
     border = accent,
-    borderVariant = InfusionTvAppearance.PanelBorder,
-    scrim = Color(0xE6000000),
+    borderVariant = panelBorder,
+    scrim = scrim,
+)
+
+fun infusionTvColorScheme(
+    tokens: InfusionThemeTokens,
+): androidx.tv.material3.ColorScheme = buildInfusionTvColorScheme(
+    accent = tokens.gradient[tokens.gradient.size / 2],
+    background = tokens.backgroundTop,
+
+    panel = tokens.glass,
+    textPrimary = tokens.textPrimary,
+    panelBorder = tokens.glassBorder,
+    scrim = tokens.backgroundTop.copy(alpha = 0.90f),
 )
 
 internal val InfusionTvColorScheme = infusionTvColorScheme(InfusionTvAppearance.DefaultAccentColor)
@@ -182,6 +213,22 @@ fun infusionTvButtonColors(
     containerColor: Color = InfusionTvContour.ControlContainerColor,
     contentColor: Color = InfusionTvContour.ControlContentColor,
 ): ButtonColors {
+    val tokens = LocalInfusionTheme.current
+    if (tokens.premium) {
+
+        return ButtonDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = tokens.textPrimary,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = tokens.onAccent,
+            pressedContainerColor = Color.Transparent,
+            pressedContentColor = tokens.onAccent,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = tokens.textPrimary.copy(
+                alpha = InfusionTvContour.DisabledContentAlpha,
+            ),
+        )
+    }
     val focused = infusionTvButtonTreatment(InfusionControlState.FOCUSED)
     val disabled = infusionTvButtonTreatment(InfusionControlState.DISABLED)
     return ButtonDefaults.colors(
@@ -219,6 +266,22 @@ fun infusionTvNavigationItemColors(
     contentColor: Color = InfusionTvContour.ControlContentColor,
     accent: Color = LocalInfusionAccent.current,
 ): ButtonColors {
+    val tokens = LocalInfusionTheme.current
+    if (tokens.premium) {
+
+        return ButtonDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = tokens.textPrimary,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = tokens.onAccent,
+            pressedContainerColor = Color.Transparent,
+            pressedContentColor = tokens.onAccent,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = tokens.textPrimary.copy(
+                alpha = InfusionTvContour.DisabledContentAlpha,
+            ),
+        )
+    }
     val focused = infusionTvButtonTreatment(InfusionControlState.FOCUSED, accent)
     val disabled = infusionTvButtonTreatment(InfusionControlState.DISABLED, accent)
     return ButtonDefaults.colors(
@@ -320,11 +383,23 @@ fun infusionTvCardScale(scale: Float = InfusionTvContour.FocusScale): CardScale 
 fun infusionTvCardBorder(
     accent: Color = LocalInfusionAccent.current,
     shape: Shape = InfusionTvContour.Shape,
-): CardBorder = CardDefaults.border(
-    border = Border.None,
-    focusedBorder = Border(BorderStroke(InfusionTvContour.CardFocusWidth, accent), 0.dp, shape),
-    pressedBorder = Border(BorderStroke(InfusionTvContour.CardFocusWidth, accent), 0.dp, shape),
-)
+): CardBorder {
+    val tokens = LocalInfusionTheme.current
+    if (tokens.premium) {
+
+        val frame = BorderStroke(InfusionTvContour.CardFocusWidth, tokens.cardFrameBrush())
+        return CardDefaults.border(
+            border = Border.None,
+            focusedBorder = Border(frame, 0.dp, shape),
+            pressedBorder = Border(frame, 0.dp, shape),
+        )
+    }
+    return CardDefaults.border(
+        border = Border.None,
+        focusedBorder = Border(BorderStroke(InfusionTvContour.CardFocusWidth, accent), 0.dp, shape),
+        pressedBorder = Border(BorderStroke(InfusionTvContour.CardFocusWidth, accent), 0.dp, shape),
+    )
+}
 
 @Composable
 fun infusionSelectionBorder(

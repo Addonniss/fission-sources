@@ -20,6 +20,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -41,6 +42,7 @@ import dev.infusion.tv.ui.presentation.identityHeading
 import dev.infusion.tv.ui.theme.InfusionTvDetailsMetrics
 import dev.infusion.tv.ui.theme.InfusionTvMotion
 import dev.infusion.tv.ui.theme.InfusionTvScaleCalibration
+import dev.infusion.tv.ui.theme.LocalInfusionTheme
 
 internal const val HeroLogoTag = "canonical:hero:logo"
 internal const val HeroTitleTag = "canonical:hero:title"
@@ -212,9 +214,18 @@ private fun HeroHeading(
                     )
                 }
             } else if (title != null) {
+
+                val themeTokens = LocalInfusionTheme.current
+                val titleStyle = if (themeTokens.premium) {
+                    InfusionTvScaleCalibration.Type.Headline.copy(
+                        brush = Brush.linearGradient(themeTokens.titleGradient),
+                    )
+                } else {
+                    InfusionTvScaleCalibration.Type.Headline
+                }
                 Text(
                     title,
-                    style = InfusionTvScaleCalibration.Type.Headline,
+                    style = titleStyle,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = if (centered) TextAlign.Center else TextAlign.Start,

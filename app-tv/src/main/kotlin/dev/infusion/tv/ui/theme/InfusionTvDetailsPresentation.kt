@@ -1,6 +1,5 @@
 package dev.infusion.tv.ui.theme
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,10 +12,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Border
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
-import androidx.tv.material3.ButtonScale
 import androidx.tv.material3.Icon
 import androidx.tv.material3.ProvideTextStyle
 import dev.infusion.tv.ui.presentation.ContentCardPresentation
@@ -68,8 +63,6 @@ object InfusionTvDetailsMetrics {
     const val ActionPlateAlpha: Float = 1f
 }
 
-private fun actionPlateShape() = infusionTvButtonShape()
-
 @Composable
 fun InfusionTvHeroPrimaryAction(
     onClick: () -> Unit,
@@ -82,33 +75,10 @@ fun InfusionTvHeroPrimaryAction(
     ),
     content: @Composable RowScope.() -> Unit,
 ) {
-    val accent = LocalInfusionAccent.current
-    val resting = InfusionTvContour.treatment(InfusionControlState.NORMAL, accent)
-    val focused = InfusionTvContour.treatment(InfusionControlState.FOCUSED, accent)
-    val disabled = InfusionTvContour.treatment(InfusionControlState.DISABLED, accent)
-    Button(
+    InfusionTvButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        scale = ButtonScale.None,
-        shape = actionPlateShape(),
-        colors = ButtonDefaults.colors(
-            containerColor = resting.containerColor,
-            contentColor = resting.contentColor,
-            focusedContainerColor = focused.containerColor,
-            focusedContentColor = focused.contentColor,
-            pressedContainerColor = focused.containerColor,
-            pressedContentColor = focused.contentColor,
-            disabledContainerColor = disabled.containerColor,
-            disabledContentColor = disabled.contentColor,
-        ),
-        border = ButtonDefaults.border(
-            border = Border.None,
-            focusedBorder = Border.None,
-            pressedBorder = Border.None,
-            disabledBorder = Border.None,
-            focusedDisabledBorder = Border.None,
-        ),
         contentPadding = contentPadding,
     ) {
         HeroActionContent(icon, InfusionTvDetailsMetrics.PrimaryActionIconSize, content)
@@ -124,38 +94,12 @@ fun InfusionTvHeroIconAction(
     selected: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
-    val accent = LocalInfusionAccent.current
-    val resting = InfusionTvContour.treatment(
-        if (selected) InfusionControlState.SELECTED else InfusionControlState.NORMAL,
-        accent,
-    )
-    val focused = InfusionTvContour.treatment(InfusionControlState.FOCUSED, accent)
-    val disabled = InfusionTvContour.treatment(InfusionControlState.DISABLED, accent)
-    Button(
+    InfusionTvButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        scale = ButtonScale.None,
-        shape = actionPlateShape(),
-        colors = ButtonDefaults.colors(
-            containerColor = resting.containerColor,
-            contentColor = resting.contentColor,
-            focusedContainerColor = focused.containerColor,
-            focusedContentColor = focused.contentColor,
-            pressedContainerColor = focused.containerColor,
-            pressedContentColor = focused.contentColor,
-            disabledContainerColor = disabled.containerColor,
-            disabledContentColor = disabled.contentColor,
-        ),
-        border = ButtonDefaults.border(
-            border = resting.contourWidth
-                ?.let { Border(BorderStroke(it, accent), 0.dp, InfusionTvContour.Shape) }
-                ?: Border.None,
-            focusedBorder = Border.None,
-            pressedBorder = Border.None,
-            disabledBorder = Border.None,
-            focusedDisabledBorder = Border.None,
-        ),
+
+        selected = selected,
         contentPadding = PaddingValues(
             horizontal = InfusionTvDetailsMetrics.ActionHorizontalPadding,
             vertical = InfusionTvDetailsMetrics.ActionVerticalPadding,
@@ -173,33 +117,10 @@ fun InfusionTvHeroContextualAction(
     icon: ImageVector? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
-    val accent = LocalInfusionAccent.current
-    val resting = InfusionTvContour.treatment(InfusionControlState.NORMAL, accent)
-    val focused = InfusionTvContour.treatment(InfusionControlState.FOCUSED, accent)
-    val disabled = InfusionTvContour.treatment(InfusionControlState.DISABLED, accent)
-    Button(
+    InfusionTvButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        scale = ButtonScale.None,
-        shape = actionPlateShape(),
-        colors = ButtonDefaults.colors(
-            containerColor = resting.containerColor,
-            contentColor = resting.contentColor,
-            focusedContainerColor = focused.containerColor,
-            focusedContentColor = focused.contentColor,
-            pressedContainerColor = focused.containerColor,
-            pressedContentColor = focused.contentColor,
-            disabledContainerColor = disabled.containerColor,
-            disabledContentColor = disabled.contentColor,
-        ),
-        border = ButtonDefaults.border(
-            border = Border.None,
-            focusedBorder = Border.None,
-            pressedBorder = Border.None,
-            disabledBorder = Border.None,
-            focusedDisabledBorder = Border.None,
-        ),
         contentPadding = PaddingValues(
             horizontal = InfusionTvDetailsMetrics.ActionHorizontalPadding,
             vertical = InfusionTvDetailsMetrics.ActionVerticalPadding,

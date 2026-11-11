@@ -1,16 +1,16 @@
 # Third-party notices
 
-INFUSION is distributed as a binary. This file reproduces, in full, the attribution
+fission is distributed as a binary. This file reproduces, in full, the attribution
 and licence notices the application itself carries on its About screen, so the same
 notices travel with the download, the website's notices page and the public
 distribution repository.
 
 The third-party terms stated here belong to the projects and services credited below.
-They are unaffected by the terms under which INFUSION itself is distributed.
+They are unaffected by the terms under which fission itself is distributed.
 
 ---
 
-## 1. Software components distributed with INFUSION
+## 1. Software components distributed with fission
 
 ### Software
 
@@ -29,7 +29,7 @@ which is used under **The JSON License**. Both texts are reproduced in full in �
 Test-only tooling (JUnit, Robolectric, Truth, MockWebServer) is a build dependency, is not
 distributed to the user, and is therefore not credited here.
 
-## 2. Services and platforms INFUSION talks to
+## 2. Services and platforms fission talks to
 
 These obligations are **attribution terms**, not software licences.
 
@@ -37,16 +37,16 @@ These obligations are **attribution terms**, not software licences.
 
 - **TMDB** — movie and TV metadata and artwork. This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
 - **OMDb** — optional community ratings, used under CC BY-NC 4.0. OMDb is not affiliated with IMDb.
-- **Jellyfin** — browsing and playback from your own Jellyfin server. INFUSION is not affiliated with, or endorsed by, the Jellyfin project.
-- **Simkl, Trakt and MDBList** — optional watch-tracking accounts you connect yourself and can disconnect at any time. INFUSION is not affiliated with, or endorsed by, any of them.
+- **Jellyfin** — browsing and playback from your own Jellyfin server. fission is not affiliated with, or endorsed by, the Jellyfin project.
+- **Simkl, Trakt and MDBList** — optional watch-tracking accounts you connect yourself and can disconnect at any time. fission is not affiliated with, or endorsed by, any of them.
 - **TheIntroDB and IntroDB.app** — intro and segment markers for the episodes you play.
-- **Add-ons** — the add-ons you install use the Stremio-compatible add-on protocol. Their catalogs, metadata and streams belong to their authors; INFUSION is not affiliated with Stremio or with any add-on provider.
+- **Add-ons** — the add-ons you install use the Stremio-compatible add-on protocol. Their catalogs, metadata and streams belong to their authors; fission is not affiliated with Stremio or with any add-on provider.
 
 ### Standing statement
 
-INFUSION is an independent personal project. Third-party names and marks belong to their owners, and no endorsement by any project or service credited on this page is claimed or implied.
+fission is an independent personal project. Third-party names and marks belong to their owners, and no endorsement by any project or service credited on this page is claimed or implied.
 
-No third-party logo or brand asset is reproduced in INFUSION or in this document: the
+No third-party logo or brand asset is reproduced in fission or in this document: the
 project holds no approved asset for any of these services, and an unverified mark would be
 a claim the project cannot make.
 

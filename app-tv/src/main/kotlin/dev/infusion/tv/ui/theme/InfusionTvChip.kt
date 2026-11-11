@@ -3,7 +3,11 @@
 package dev.infusion.tv.ui.theme
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -35,16 +39,30 @@ fun InfusionTvFilterChip(
         menuAvailable = contextMenuAvailable,
         leadingInset = InfusionTvChipLeadingInset,
     )
+
+    val tokens = LocalInfusionTheme.current
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+
+    val themedModifier = if (tokens.premium) {
+        modifier
+            .themeControlBackdrop(focused = focused, selected = selected)
+            .themeControlMaterial(focused = focused)
+            .then(hintModifier)
+    } else {
+        modifier.then(hintModifier)
+    }
     FilterChip(
         selected = selected,
         onClick = onClick,
-        modifier = modifier.then(hintModifier),
+        modifier = themedModifier,
         enabled = enabled,
         onLongClick = onLongClick,
         shape = infusionTvChipShape(shape),
         colors = infusionTvChipColors(),
         scale = infusionTvChipScale(),
         border = infusionTvChipBorder(shape = shape),
+        interactionSource = interaction,
         content = content,
     )
 }
@@ -59,6 +77,28 @@ fun infusionTvChipTreatment(
 fun infusionTvChipColors(
     accent: Color = LocalInfusionAccent.current,
 ): SelectableChipColors {
+    val tokens = LocalInfusionTheme.current
+    if (tokens.premium) {
+
+        return FilterChipDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = tokens.textPrimary,
+            focusedContainerColor = Color.Transparent,
+            focusedContentColor = tokens.onAccent,
+            pressedContainerColor = Color.Transparent,
+            pressedContentColor = tokens.onAccent,
+            selectedContainerColor = Color.Transparent,
+            selectedContentColor = tokens.textPrimary,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = tokens.textPrimary.copy(
+                alpha = InfusionTvContour.DisabledContentAlpha,
+            ),
+            focusedSelectedContainerColor = Color.Transparent,
+            focusedSelectedContentColor = tokens.onAccent,
+            pressedSelectedContainerColor = Color.Transparent,
+            pressedSelectedContentColor = tokens.onAccent,
+        )
+    }
     val normal = infusionTvChipTreatment(InfusionControlState.NORMAL, accent)
     val selected = infusionTvChipTreatment(InfusionControlState.SELECTED, accent)
     val focused = infusionTvChipTreatment(InfusionControlState.FOCUSED, accent)

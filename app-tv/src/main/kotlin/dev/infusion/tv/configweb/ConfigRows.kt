@@ -3,6 +3,7 @@ package dev.infusion.tv.configweb
 import dev.infusion.core.domain.appearance.AccentColor
 import dev.infusion.core.domain.appearance.ArtworkStyle
 import dev.infusion.core.domain.appearance.SplashScreenMode
+import dev.infusion.core.domain.appearance.ThemePreset
 import dev.infusion.core.domain.appearance.TmdbBackdropQuality
 import dev.infusion.core.domain.appearance.TmdbLandscapeCardQuality
 import dev.infusion.core.domain.appearance.TopShelfAppearance
@@ -60,6 +61,21 @@ internal object ConfigRows {
         val appearance = owners.appearance
         val prefs = { appearance.preferences.value }
         return listOf(
+
+            RowSpec(
+                key = "theme",
+                label = "Themes",
+                group = GROUP_GENERAL,
+                control = ConfigRowControl.CHOICE,
+                choices = {
+                    ThemePreset.choices.map { ConfigChoiceState(it.storageKey, it.displayName) }
+                },
+                read = { prefs().theme.storageKey },
+                write = { token ->
+                    ThemePreset.fromStorageKey(token)?.let { appearance.selectTheme(it) }
+                    verified({ prefs().theme.storageKey }, token)
+                },
+            ),
             RowSpec(
                 key = "accent",
                 label = "Accent color",
@@ -1170,6 +1186,7 @@ internal object ConfigRows {
     }
 
     private fun accentLabel(accent: AccentColor): String = when (accent) {
+        AccentColor.THEME -> "Theme accent"
         AccentColor.ORANGE -> "Orange"
         AccentColor.RED -> "Red"
         AccentColor.AMBER -> "Amber"

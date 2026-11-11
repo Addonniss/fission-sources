@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -39,7 +40,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.selected
@@ -47,21 +50,28 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.border
 import dev.infusion.tv.ui.presentation.TvBrowseContentAlignmentInset
 import dev.infusion.tv.ui.theme.InfusionTvButton
+import dev.infusion.tv.ui.theme.LocalInfusionTheme
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Icon
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Text
 import dev.infusion.tv.ui.theme.InfusionTvAppearance
+import dev.infusion.tv.ui.theme.InfusionPremiumMaterial
 import dev.infusion.tv.ui.theme.InfusionTvContour
 import dev.infusion.tv.ui.theme.InfusionTvScaleCalibration
 import dev.infusion.tv.ui.theme.infusionTvButtonColors
 import dev.infusion.tv.ui.theme.infusionTvNavigationItemBorder
 import dev.infusion.tv.ui.theme.infusionTvNavigationItemColors
+import dev.infusion.tv.ui.theme.premiumRailEntryContentColor
 
 class RailSection(
     val railKey: String,
     val label: String,
+
+    val iconRes: Int = 0,
     val content: @Composable (
         entryToken: Int,
         rememberedFocusKey: String?,
@@ -94,14 +104,22 @@ internal object RailContentBand {
 
     val StartInset: Dp = LabelAnchor - ItemHorizontalPadding
 
+    val IconSize: Dp = InfusionTvScaleCalibration.Type.Headline.lineHeight.value.dp
+
+    val IconLabelGap: Dp = TvTopShelfBand.IconLabelGap
+
+    val ItemInkWidth: Dp = IconSize + IconLabelGap + LabelCapacity
+
     val Width: Dp =
-        StartInset + ItemHorizontalPadding + LabelCapacity + ItemHorizontalPadding + PagePadding
+        StartInset + ItemHorizontalPadding + ItemInkWidth + ItemHorizontalPadding + PagePadding
 
     val BackgroundShape: Shape = InfusionTvContour.Shape
 
     const val ScrollHintUp: String = "▲"
     const val ScrollHintDown: String = "▼"
 }
+
+internal fun railIconTag(railKey: String): String = "$railKey:icon"
 
 @Composable
 fun RailContentPage(
@@ -191,9 +209,25 @@ fun RailContentPage(
         .width(RailContentBand.Width)
         .fillMaxHeight()
         .testTag(RailContentBand.PanelTestTag)
-        .background(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RailContentBand.BackgroundShape,
+        .then(
+
+            if (LocalInfusionTheme.current.premium) {
+                Modifier
+                    .background(
+                        color = LocalInfusionTheme.current.glass,
+                        shape = RailContentBand.BackgroundShape,
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = LocalInfusionTheme.current.glassBorder,
+                        shape = RailContentBand.BackgroundShape,
+                    )
+            } else {
+                Modifier.background(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RailContentBand.BackgroundShape,
+                )
+            },
         )
         .padding(
             start = RailContentBand.StartInset,
@@ -268,6 +302,12 @@ fun RailContentPage(
                     val requester = remember(section.railKey) { FocusRequester() }
                     val bringIntoView = remember(section.railKey) { BringIntoViewRequester() }
                     railRequesters[section.railKey] = requester
+
+                    val entryContentColor = premiumRailEntryContentColor(
+                        tokens = LocalInfusionTheme.current,
+                        selected = selected,
+                        focused = railFocusKey == section.railKey,
+                    )
                     InfusionTvButton(
                         onClick = { enterSection(section) },
                         modifier = Modifier
@@ -292,14 +332,34 @@ fun RailContentPage(
                         border = infusionTvNavigationItemBorder(selected = selected),
 
                         contentPadding = RailContentBand.ItemContentPadding,
-                    ) {
-                        Text(
-                            text = section.label,
-                            style = InfusionTvScaleCalibration.Type.Headline,
 
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        premiumMaterial = InfusionPremiumMaterial.NAVIGATION_ITEM,
+                    ) {
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (section.iconRes != 0) {
+
+                                Icon(
+                                    painter = painterResource(section.iconRes),
+                                    contentDescription = null,
+                                    tint = entryContentColor ?: LocalContentColor.current,
+                                    modifier = Modifier
+                                        .size(RailContentBand.IconSize)
+                                        .testTag(railIconTag(section.railKey)),
+                                )
+                                Spacer(Modifier.width(RailContentBand.IconLabelGap))
+                            }
+                            Text(
+                                text = section.label,
+                                style = InfusionTvScaleCalibration.Type.Headline,
+                                color = entryContentColor ?: Color.Unspecified,
+
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
 
@@ -327,6 +387,17 @@ fun RailContentPage(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
+                .then(
+
+                    if (LocalInfusionTheme.current.premium) {
+                        Modifier.background(
+                            color = LocalInfusionTheme.current.glass,
+                            shape = RailContentBand.BackgroundShape,
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
                 .onFocusChanged { state ->
                     if (state.hasFocus) focusInRail = false
                 }

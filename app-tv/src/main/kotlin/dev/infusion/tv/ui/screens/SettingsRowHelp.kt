@@ -10,6 +10,10 @@ internal object SettingsRowHelp {
         const val Accent =
             "Sets the highlight colour used for focus, selection and accents throughout fission."
 
+        const val Theme =
+            "Changes the overall look of fission: colours, materials, gradients, shapes and type. " +
+                "Classic is the original appearance."
+
         const val TopShelfAppearance =
             "Shows the top bar's destinations as text only, as icons only, or as both."
 

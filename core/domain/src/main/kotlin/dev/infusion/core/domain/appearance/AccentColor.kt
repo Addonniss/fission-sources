@@ -1,6 +1,12 @@
 package dev.infusion.core.domain.appearance
 
-enum class AccentColor(val storageKey: String) {
+enum class AccentColor(
+    val storageKey: String,
+
+    val followsTheme: Boolean = false,
+) {
+
+    THEME("theme", followsTheme = true),
     ORANGE("orange"),
     RED("red"),
     AMBER("amber"),
@@ -11,7 +17,7 @@ enum class AccentColor(val storageKey: String) {
 
     companion object {
 
-        val DEFAULT: AccentColor = ORANGE
+        val DEFAULT: AccentColor = THEME
 
         fun fromStorageKey(key: String?): AccentColor? =
             entries.firstOrNull { it.storageKey == key }

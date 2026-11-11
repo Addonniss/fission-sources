@@ -28,6 +28,9 @@ import dev.infusion.tv.ui.focus.stableFocusModifier
 import dev.infusion.tv.ui.theme.InfusionTvAppearance
 import dev.infusion.tv.ui.theme.InfusionTvContour
 import dev.infusion.tv.ui.theme.InfusionTvScaleCalibration
+import dev.infusion.tv.ui.theme.LocalInfusionTheme
+import dev.infusion.tv.ui.theme.themeInfoPanelContour
+import dev.infusion.tv.ui.theme.themeInfoPanelFill
 import kotlinx.coroutines.launch
 
 const val SettingsAboutRead = "settings:about:read"
@@ -254,7 +257,10 @@ private fun AboutCreditsPanel(groups: List<AboutCreditGroup>) {
 private fun AboutPanel(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         shape = InfusionTvContour.Shape,
-        colors = SurfaceDefaults.colors(containerColor = InfusionTvAppearance.Panel),
+        colors = SurfaceDefaults.colors(
+            containerColor = themeInfoPanelFill(LocalInfusionTheme.current),
+        ),
+        modifier = Modifier.themeInfoPanelContour(),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

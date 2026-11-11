@@ -53,8 +53,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusTarget
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -79,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.infusion.tv.ui.theme.InfusionTvButton
+import dev.infusion.tv.ui.theme.InfusionTvSwitch
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import androidx.tv.material3.LocalContentColor
@@ -88,6 +91,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import dev.infusion.core.domain.appearance.AccentColor
+import dev.infusion.core.domain.appearance.ThemePreset
 import dev.infusion.core.domain.appearance.ArtworkStyle
 import dev.infusion.core.domain.appearance.SplashScreenMode
 import dev.infusion.core.domain.appearance.TmdbBackdropQuality
@@ -179,10 +183,12 @@ import dev.infusion.tv.ui.theme.InfusionTvScaleCalibration
 import dev.infusion.tv.ui.theme.InfusionTvStateTextField
 import dev.infusion.tv.ui.theme.InfusionTvTheme
 import dev.infusion.tv.ui.theme.LocalInfusionAccent
+import dev.infusion.tv.ui.theme.LocalInfusionTheme
 import dev.infusion.tv.ui.theme.infusionAccentContentColor
 import dev.infusion.tv.ui.theme.infusionSelectionBorder
 import dev.infusion.tv.ui.theme.infusionTvButtonBorder
 import dev.infusion.tv.ui.theme.infusionTvButtonColors
+import dev.infusion.tv.ui.theme.themeValueChip
 import kotlin.math.abs
 
 internal const val JellyfinFocusUrl = "jellyfin:url"
@@ -219,6 +225,8 @@ const val SettingsTrackingQr = "settings:tracking:qr"
 const val SettingsGeneralPane = "settings:general:pane"
 
 const val SettingsGeneralAccentRow = "settings:general:accent"
+
+const val SettingsGeneralThemeRow = "settings:general:theme"
 
 const val SettingsGeneralTopShelfAppearanceRow = "settings:general:top-shelf-appearance"
 
@@ -259,6 +267,7 @@ fun generalSelectorChoiceKey(rowTag: String, storageKey: String): String =
     "$rowTag:choice:$storageKey"
 
 private val GeneralRowKeys = listOf(
+    SettingsGeneralThemeRow,
     SettingsGeneralAccentRow,
     SettingsGeneralTopShelfAppearanceRow,
     SettingsGeneralSplashScreenRow,
@@ -1156,6 +1165,10 @@ fun TvSettingsScreen(
 
     onAccentChange: (AccentColor) -> Unit = {},
 
+    theme: ThemePreset = ThemePreset.DEFAULT,
+
+    onThemeChange: (ThemePreset) -> Unit = {},
+
     topShelfAppearance: TopShelfAppearance = TopShelfAppearance.DEFAULT,
 
     onTopShelfAppearanceChange: (TopShelfAppearance) -> Unit = {},
@@ -1430,10 +1443,13 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailGeneral,
                             label = "General",
+                            iconRes = settingsRailIcon(SettingsRailGeneral),
                             content = { entryToken, rememberedKey, onFocusRequested, _ ->
                                 GeneralSectionContent(
                                     accent = accent,
                                     onAccentChange = onAccentChange,
+                                    theme = theme,
+                                    onThemeChange = onThemeChange,
                                     topShelfAppearance = topShelfAppearance,
                                     onTopShelfAppearanceChange = onTopShelfAppearanceChange,
                                     splashScreen = splashScreen,
@@ -1482,6 +1498,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailPlayback,
                             label = "Playback",
+                            iconRes = settingsRailIcon(SettingsRailPlayback),
                             content = { entryToken, rememberedKey, onFocusRequested, _ ->
                                 PlaybackSectionContent(
                                     displayMatching = displayMatching,
@@ -1557,6 +1574,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailHome,
                             label = "Home",
+                            iconRes = settingsRailIcon(SettingsRailHome),
                             content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
                                 HomeSectionContent(
                                     holder = homeCustomization,
@@ -1581,6 +1599,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailWidgets,
                             label = "Widgets",
+                            iconRes = settingsRailIcon(SettingsRailWidgets),
                             content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
                                 WidgetBuilderSectionContent(
                                     holder = widgetBuilder,
@@ -1612,6 +1631,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailProfiles,
                             label = "Profiles",
+                            iconRes = settingsRailIcon(SettingsRailProfiles),
                             content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
                                 ProfilesSectionContent(
                                     profileManagement = profileManagement,
@@ -1628,6 +1648,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailJellyfin,
                             label = "Jellyfin",
+                            iconRes = settingsRailIcon(SettingsRailJellyfin),
                             content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
                                 TvJellyfinSection(
                                     setup = setup,
@@ -1647,6 +1668,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailTracking,
                             label = "Tracking",
+                            iconRes = settingsRailIcon(SettingsRailTracking),
                             content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
                                 TrackingSectionContent(
                                     holders = tracking,
@@ -1662,6 +1684,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailRatings,
                             label = "Ratings",
+                            iconRes = settingsRailIcon(SettingsRailRatings),
                             content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
                                 RatingsSectionContent(
                                     holder = ratingsSettings,
@@ -1676,6 +1699,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailPairing,
                             label = "Phone setup",
+                            iconRes = settingsRailIcon(SettingsRailPairing),
                             content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
 
                                 PhoneSetupSectionContent(
@@ -1692,6 +1716,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailAddons,
                             label = "Add-ons",
+                            iconRes = settingsRailIcon(SettingsRailAddons),
                             content = { entryToken, rememberedKey, onFocusRequested, onReturnToRail ->
 
                                 if (addonsManagement == null) {
@@ -1717,6 +1742,7 @@ fun TvSettingsScreen(
                         RailSection(
                             railKey = SettingsRailAbout,
                             label = "About",
+                            iconRes = settingsRailIcon(SettingsRailAbout),
                             content = { entryToken, rememberedKey, onFocusRequested, _ ->
                                 AboutSectionContent(
                                     requesters = aboutRequesters,
@@ -1796,6 +1822,9 @@ internal fun RestoreSectionFocus(
 private fun GeneralSectionContent(
     accent: AccentColor,
     onAccentChange: (AccentColor) -> Unit,
+
+    theme: ThemePreset,
+    onThemeChange: (ThemePreset) -> Unit,
     topShelfAppearance: TopShelfAppearance,
     onTopShelfAppearanceChange: (TopShelfAppearance) -> Unit,
     splashScreen: SplashScreenMode,
@@ -1841,13 +1870,13 @@ private fun GeneralSectionContent(
     RestoreSectionFocus(
         entryToken = entryToken,
         rememberedKey = rememberedKey?.takeIf { it in rowKeys },
-        firstKey = SettingsGeneralAccentRow,
+        firstKey = SettingsGeneralThemeRow,
         requesters = requesters,
     )
 
     var accentSelectorOpen by remember { mutableStateOf(false) }
 
-    var focusedRowKey by remember { mutableStateOf(SettingsGeneralAccentRow) }
+    var focusedRowKey by remember { mutableStateOf(SettingsGeneralThemeRow) }
 
     var selectorWasOpen by remember { mutableStateOf(false) }
     LaunchedEffect(accentSelectorOpen) {
@@ -1907,6 +1936,21 @@ private fun GeneralSectionContent(
             }
         }
     }
+
+    var themePickerOpen by remember { mutableStateOf(false) }
+    var themePickerWasOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(themePickerOpen) {
+        val wasOpen = themePickerWasOpen
+        themePickerWasOpen = themePickerOpen
+        if (wasOpen && !themePickerOpen) {
+            repeat(30) {
+                withFrameNanos { }
+                if (requesters[SettingsGeneralThemeRow]?.requestFocus() == true) {
+                    return@LaunchedEffect
+                }
+            }
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1928,6 +1972,21 @@ private fun GeneralSectionContent(
             },
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+
+        GeneralSettingRow(
+            label = "Theme",
+            value = theme.displayName,
+            tag = SettingsGeneralThemeRow,
+            presentation = SettingsRowPresentation.EXPANDED,
+            help = SettingsRowHelp.General.Theme,
+            requesters = requesters,
+            onFocused = { key ->
+                focusedRowKey = key
+                onFocusRequested(key)
+            },
+            onOpen = { themePickerOpen = true },
+        )
+
         GeneralSettingRow(
             label = "Accent color",
             value = accentDisplayName(accent),
@@ -1941,6 +2000,16 @@ private fun GeneralSectionContent(
             },
             onOpen = { accentSelectorOpen = true },
         )
+        if (themePickerOpen) {
+            ThemePickerDialog(
+                current = theme,
+                onSelect = { chosen ->
+                    onThemeChange(chosen)
+                    themePickerOpen = false
+                },
+                onDismiss = { themePickerOpen = false },
+            )
+        }
 
         GeneralToggleRow(
             label = "Top Shelf Appearance",
@@ -2183,7 +2252,12 @@ private fun GeneralSectionContent(
                     modifier = Modifier
                         .size(14.dp)
                         .background(
-                            color = InfusionTvAppearance.accentColor(choice),
+
+                            brush = if (choice.followsTheme) {
+                                Brush.linearGradient(LocalInfusionTheme.current.gradient)
+                            } else {
+                                SolidColor(InfusionTvAppearance.accentColor(choice))
+                            },
                             shape = RoundedCornerShape(3.dp),
                         ),
                 )
@@ -3570,11 +3644,22 @@ private fun <T : Any> SettingsLanguageSelectorDialog(
                 .width(GeneralSelectorWidth)
                 .border(
                     width = InfusionTvContour.SelectedWidth,
-                    color = LocalInfusionAccent.current,
+                    color = if (LocalInfusionTheme.current.premium) {
+
+                        LocalInfusionTheme.current.glassBorder
+                    } else {
+                        LocalInfusionAccent.current
+                    },
                     shape = InfusionTvContour.Shape,
                 ),
             shape = InfusionTvContour.Shape,
-            colors = SurfaceDefaults.colors(containerColor = InfusionTvAppearance.Panel),
+            colors = SurfaceDefaults.colors(
+                containerColor = if (LocalInfusionTheme.current.premium) {
+                    LocalInfusionTheme.current.backgroundBottom
+                } else {
+                    InfusionTvAppearance.Panel
+                },
+            ),
         ) {
             Column(
                 modifier = Modifier
@@ -3713,6 +3798,8 @@ internal fun GeneralSettingRow(
             focused = focused,
             labelIndent = labelIndent,
             valueColor = infusionAccentContentColor(focused),
+
+            valueChipTag = "$tag:value-chip",
             trailing = {
                 Spacer(Modifier.width(SettingsRowPresentationMetrics.TrailingGap))
                 Text("›", style = InfusionTvScaleCalibration.Type.SettingsContent)
@@ -3771,6 +3858,12 @@ private fun GeneralToggleRow(
             .then(if (expanded) settingsRowBringIntoView(focused) else Modifier),
         contentPadding = PaddingValues(horizontal = 16.dp),
     ) {
+
+        val booleanState: Boolean? = when (value) {
+            "On" -> true
+            "Off" -> false
+            else -> null
+        }
         SettingsRowBody(
             presentation = presentation,
             label = label,
@@ -3779,6 +3872,18 @@ private fun GeneralToggleRow(
             focused = focused,
             labelIndent = labelIndent,
             valueColor = infusionAccentContentColor(focused),
+
+            valueChipTag = if (booleanState == null) "$tag:value-chip" else null,
+            valueContent = booleanState?.let { state ->
+                {
+                    InfusionTvSwitch(
+                        checked = state,
+                        focused = focused,
+                        modifier = Modifier.testTag("$tag:switch"),
+                        stateText = value,
+                    )
+                }
+            },
         )
     }
 }
@@ -3836,11 +3941,22 @@ internal fun <T> GeneralSelectorDialog(
                 }
                 .border(
                     width = InfusionTvContour.SelectedWidth,
-                    color = LocalInfusionAccent.current,
+                    color = if (LocalInfusionTheme.current.premium) {
+
+                        LocalInfusionTheme.current.glassBorder
+                    } else {
+                        LocalInfusionAccent.current
+                    },
                     shape = InfusionTvContour.Shape,
                 ),
             shape = InfusionTvContour.Shape,
-            colors = SurfaceDefaults.colors(containerColor = InfusionTvAppearance.Panel),
+            colors = SurfaceDefaults.colors(
+                containerColor = if (LocalInfusionTheme.current.premium) {
+                    LocalInfusionTheme.current.backgroundBottom
+                } else {
+                    InfusionTvAppearance.Panel
+                },
+            ),
         ) {
             Column(
 
@@ -3977,6 +4093,8 @@ private fun SelectorScrollHint(glyph: String) {
 }
 
 private fun accentDisplayName(accent: AccentColor): String = when (accent) {
+
+    AccentColor.THEME -> "Theme accent"
     AccentColor.ORANGE -> "Orange"
     AccentColor.RED -> "Red"
     AccentColor.AMBER -> "Amber"
@@ -4563,6 +4681,8 @@ private fun TrackingProviderRow(
                 focused = false,
                 valueModifier = Modifier.testTag(statusTag),
                 valueColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+
+                valueChip = false,
             )
         }
         return
@@ -5032,6 +5152,7 @@ private fun HomePreferenceRow(
 
 @Composable
 private fun HomePreferenceStateValue(tag: String, checked: Boolean, focused: Boolean) {
+
     Box(
         modifier = Modifier
             .testTag(tag)
@@ -5039,10 +5160,10 @@ private fun HomePreferenceStateValue(tag: String, checked: Boolean, focused: Boo
                 toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
             },
     ) {
-        Text(
-            text = homePreferenceStateText(checked),
-            style = InfusionTvScaleCalibration.Type.SettingsContent,
-            color = homePresentationValueColor(focused, LocalInfusionAccent.current),
+        InfusionTvSwitch(
+            checked = checked,
+            focused = focused,
+            stateText = homePreferenceStateText(checked),
         )
     }
 }
@@ -5080,13 +5201,25 @@ private fun HomeSelectorRow(
             rightEdge = true,
             help = help,
             trailingFocused = { focused ->
-                Text(
-                    value,
-                    style = InfusionTvScaleCalibration.Type.SettingsContent,
-                    color = homePresentationValueColor(focused, LocalInfusionAccent.current),
-                )
-                Spacer(Modifier.width(12.dp))
-                Text("›", style = InfusionTvScaleCalibration.Type.SettingsContent)
+
+                Row(
+                    modifier = Modifier
+                        .themeValueChip(focused)
+                        .padding(
+                            horizontal = SettingsRowPresentationMetrics
+                                .ValueChipHorizontalPadding,
+                            vertical = SettingsRowPresentationMetrics
+                                .ValueChipVerticalPadding,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        value,
+                        style = InfusionTvScaleCalibration.Type.SettingsContent,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text("›", style = InfusionTvScaleCalibration.Type.SettingsContent)
+                }
             },
         )
     }
@@ -5196,7 +5329,7 @@ internal fun HomeStateToggle(
             },
         contentPadding = PaddingValues(horizontal = 4.dp),
     ) {
-        HomeStateLabel(checked, accent = treatment.accentLabel, focused = focused)
+        HomeStateSwitch(tag = tag, checked = checked, focused = focused)
     }
 }
 
@@ -5242,16 +5375,17 @@ internal fun HomeStateBadge(tag: String, checked: Boolean, cell: HomeStateCell) 
             },
         contentAlignment = Alignment.Center,
     ) {
-        HomeStateLabel(checked, accent = treatment.accentLabel)
+        HomeStateSwitch(tag = tag, checked = checked, focused = false)
     }
 }
 
 @Composable
-private fun HomeStateLabel(checked: Boolean, accent: Boolean, focused: Boolean = false) {
-    Text(
-        text = if (checked) "ON" else "OFF",
-        style = InfusionTvScaleCalibration.Type.SettingsContent,
-        color = if (accent) infusionAccentContentColor(focused) else Color.Unspecified,
+private fun HomeStateSwitch(tag: String, checked: Boolean, focused: Boolean) {
+    InfusionTvSwitch(
+        checked = checked,
+        focused = focused,
+        modifier = Modifier.testTag("$tag:switch"),
+        stateText = if (checked) "ON" else "OFF",
     )
 }
 
@@ -6101,11 +6235,22 @@ private fun RatingsOmdbOverlay(
                 .width(640.dp)
                 .border(
                     width = InfusionTvContour.SelectedWidth,
-                    color = LocalInfusionAccent.current,
+                    color = if (LocalInfusionTheme.current.premium) {
+
+                        LocalInfusionTheme.current.glassBorder
+                    } else {
+                        LocalInfusionAccent.current
+                    },
                     shape = InfusionTvContour.Shape,
                 ),
             shape = InfusionTvContour.Shape,
-            colors = SurfaceDefaults.colors(containerColor = InfusionTvAppearance.Panel),
+            colors = SurfaceDefaults.colors(
+                containerColor = if (LocalInfusionTheme.current.premium) {
+                    LocalInfusionTheme.current.backgroundBottom
+                } else {
+                    InfusionTvAppearance.Panel
+                },
+            ),
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),

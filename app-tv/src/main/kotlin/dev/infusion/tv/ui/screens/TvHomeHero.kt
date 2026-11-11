@@ -698,7 +698,7 @@ internal fun rememberHomeHeroArtwork(
     var resolvedReported by remember(locator) { mutableStateOf(false) }
     val resolvedSink = rememberUpdatedState(onResolved)
 
-    var shown by remember(locator, retention) {
+    var shown by remember(retention) {
         mutableStateOf(
             retention?.lastShownArtwork?.takeIf {
                 it.policy == presentable?.policy &&
@@ -710,7 +710,6 @@ internal fun rememberHomeHeroArtwork(
     var publishedLocator by remember(locator, retention) { mutableStateOf<String?>(null) }
     LaunchedEffect(locator, viewportTarget, loader) {
         if (presentable == null) {
-            shown = null
 
             if (!resolvedReported) {
                 resolvedReported = true
@@ -727,9 +726,7 @@ internal fun rememberHomeHeroArtwork(
             return@LaunchedEffect
         }
 
-        val ready = loader?.load(
-            ArtworkRequest.of(presentable.locator, presentable.policy, viewportTarget),
-        )
+        val ready = loader?.load(heroArtworkRequest(presentable, viewportTarget))
 
         val presented = if (ready != null) presentable else null
         shown = presented

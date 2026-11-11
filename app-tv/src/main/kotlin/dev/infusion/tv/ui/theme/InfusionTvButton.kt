@@ -1,10 +1,13 @@
 package dev.infusion.tv.ui.theme
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.tv.material3.Button
@@ -36,8 +39,14 @@ fun InfusionTvButton(
     contextMenuAvailable: Boolean = onLongClick != null,
 
     contextMenuHintVerticalCenter: (() -> Float?)? = null,
+
+    premiumMaterial: InfusionPremiumMaterial = InfusionPremiumMaterial.PLATE,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val tokens = LocalInfusionTheme.current
+
+    val interaction = interactionSource ?: remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
     val resolvedBorder = border ?: infusionTvButtonBorder(selected = selected)
 
     val hintModifier = Modifier.contextMenuHintDecoration(
@@ -45,9 +54,18 @@ fun InfusionTvButton(
         leadingInset = contentPadding.calculateStartPadding(LocalLayoutDirection.current),
         verticalCenterPx = contextMenuHintVerticalCenter,
     )
+
+    val themedModifier = if (tokens.premium) {
+        modifier
+            .themeControlBackdrop(focused = focused, selected = selected, material = premiumMaterial)
+            .themeControlMaterial(focused = focused, material = premiumMaterial)
+            .then(hintModifier)
+    } else {
+        modifier.then(hintModifier)
+    }
     Button(
         onClick = onClick,
-        modifier = modifier.then(hintModifier),
+        modifier = themedModifier,
         onLongClick = onLongClick,
         enabled = enabled,
         scale = scale,
@@ -56,7 +74,7 @@ fun InfusionTvButton(
         colors = colors,
         border = resolvedBorder,
         contentPadding = contentPadding,
-        interactionSource = interactionSource,
+        interactionSource = interaction,
         content = content,
     )
 }

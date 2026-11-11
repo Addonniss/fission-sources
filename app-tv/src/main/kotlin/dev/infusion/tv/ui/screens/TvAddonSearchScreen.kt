@@ -84,7 +84,9 @@ import dev.infusion.tv.ui.theme.InfusionTvContour
 import dev.infusion.tv.ui.theme.InfusionTvScaleCalibration
 import dev.infusion.tv.ui.theme.InfusionTvStateTextField
 import dev.infusion.tv.ui.theme.LocalInfusionAccent
+import dev.infusion.tv.ui.theme.LocalInfusionTheme
 import dev.infusion.tv.ui.theme.infusionTvButtonColors
+import dev.infusion.tv.ui.theme.themeControlBackdrop
 
 @Composable
 fun TvAddonSearchScreen(
@@ -630,6 +632,8 @@ private fun SearchHistoryOverlay(
 
                                     .clip(InfusionTvContour.Shape)
                                     .background(treatment.containerColor)
+
+                                    .themeControlBackdrop(focused = entryFocused)
                                     .then(
                                         stableFocusModifier(
                                             key,
@@ -776,7 +780,14 @@ internal const val SEARCH_CLEAR_CONFIRM_KEY = "search-clear-confirm-action"
 
 @Composable
 internal fun searchHistoryEntryTreatment(focused: Boolean): InfusionControlTreatment =
-    if (focused) {
+    if (focused && LocalInfusionTheme.current.premium) {
+
+        InfusionControlTreatment(
+            containerColor = Color.Transparent,
+            contentColor = LocalInfusionTheme.current.onAccent,
+            contourWidth = null,
+        )
+    } else if (focused) {
         InfusionTvContour.treatment(InfusionControlState.FOCUSED, LocalInfusionAccent.current)
     } else {
         InfusionControlTreatment(

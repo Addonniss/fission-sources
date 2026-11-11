@@ -1474,6 +1474,9 @@ private fun TvNavContent(
                 accent = appearance.accent,
                 onAccentChange = { container.appearanceStateHolder.setAccent(it) },
 
+                theme = appearance.theme,
+                onThemeChange = { container.appearanceStateHolder.selectTheme(it) },
+
                 topShelfAppearance = appearance.topShelfAppearance,
                 onTopShelfAppearanceChange = {
                     container.appearanceStateHolder.setTopShelfAppearance(it)

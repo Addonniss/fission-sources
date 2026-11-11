@@ -30,6 +30,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.tv.material3.Text
 
 object InfusionTvField {
@@ -123,13 +127,33 @@ fun infusionTvFieldSurface(
     enabled: Boolean = true,
     accent: Color = LocalInfusionAccent.current,
     shape: Shape = InfusionTvField.Shape,
-): Modifier = Modifier
-    .background(InfusionTvField.containerColor(focused, enabled, accent), shape)
-    .border(
-        width = InfusionTvField.FocusBorderWidth,
-        color = infusionTvFieldBorderColor(focused = focused, enabled = enabled, accent = accent),
-        shape = shape,
-    )
+): Modifier {
+    val tokens = LocalInfusionTheme.current
+    if (tokens.premium) {
+
+        val cornerPx = with(LocalDensity.current) { InfusionTvContour.CornerRadius.toPx() }
+        return Modifier.drawBehind {
+            val corner = CornerRadius(cornerPx)
+            if (focused && enabled) {
+                drawRoundRect(brush = tokens.fillBrush(size), cornerRadius = corner)
+            } else {
+                drawRoundRect(color = tokens.glass, cornerRadius = corner)
+                drawRoundRect(
+                    color = tokens.glassBorder,
+                    cornerRadius = corner,
+                    style = Stroke(width = 1.dp.toPx()),
+                )
+            }
+        }
+    }
+    return Modifier
+        .background(InfusionTvField.containerColor(focused, enabled, accent), shape)
+        .border(
+            width = InfusionTvField.FocusBorderWidth,
+            color = infusionTvFieldBorderColor(focused = focused, enabled = enabled, accent = accent),
+            shape = shape,
+        )
+}
 
 @Composable
 fun infusionTvFieldBorderColor(

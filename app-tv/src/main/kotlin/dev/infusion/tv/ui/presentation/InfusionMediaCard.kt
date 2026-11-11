@@ -37,6 +37,8 @@ import dev.infusion.feature.vertical.artwork.SeriesLandscapeState
 import dev.infusion.tv.ui.focus.stableFocusModifier
 import dev.infusion.tv.ui.theme.infusionTvCardBorder
 import dev.infusion.tv.ui.theme.InfusionTvContour
+import dev.infusion.tv.ui.theme.themeArtworkClip
+import dev.infusion.tv.ui.theme.themeArtworkTreatment
 import dev.infusion.tv.ui.theme.infusionTvCardColors
 import dev.infusion.tv.ui.theme.infusionTvCardScale
 import dev.infusion.tv.ui.theme.infusionTvCardShape
@@ -243,7 +245,8 @@ fun InfusionMediaCard(
 
                     .onSizeChanged { artworkSize = it }
 
-                    .contentCardArtworkClip()
+                    .then(Modifier.themeArtworkClip())
+                    .themeArtworkTreatment(focused = cardFocused)
 
                     .then(
                         if (artworkAccessibilityLabel != null) {

@@ -103,6 +103,10 @@ class MainActivity : ComponentActivity() {
             ) {
                 InfusionTvTheme(
                     accent = InfusionTvAppearance.accentColor(appearance.accent),
+
+                    themeAccent = appearance.accent.followsTheme,
+
+                    theme = appearance.theme,
                     cardPresentation = appearance.toContentCardPresentation(),
 
                     topShelfAppearance = appearance.topShelfAppearance,

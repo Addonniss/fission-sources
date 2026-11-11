@@ -30,6 +30,8 @@ data class ProfileAppearancePreferences(
     val tmdbLandscapeCardQuality: TmdbLandscapeCardQuality = TmdbLandscapeCardQuality.DEFAULT,
 
     val contextMenuBadge: Boolean = true,
+
+    val theme: ThemePreset = ThemePreset.DEFAULT,
 ) {
     companion object {
 

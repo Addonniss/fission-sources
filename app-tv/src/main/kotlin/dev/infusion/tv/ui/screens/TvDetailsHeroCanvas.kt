@@ -2,6 +2,7 @@
 
 package dev.infusion.tv.ui.screens
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.tv.material3.MaterialTheme
 import dev.infusion.core.artworkimage.ArtworkImage
 import dev.infusion.core.artworkimage.ArtworkRequest
+import dev.infusion.core.artworkimage.LocalArtworkLoader
 import dev.infusion.core.model.ArtworkPolicy
 import dev.infusion.core.model.MediaArtworkRef
 import dev.infusion.feature.vertical.media.CanonicalHeroUi
@@ -93,10 +95,14 @@ internal fun TvDetailsHeroCanvas(
     val backdropLocator = hero?.backdropLocator
 
     val backdropConfirmedAbsent = primarySettled && hero != null && backdropLocator == null
+
+    val canonicalSlotAbsent = primarySettled && hero == null
     DetailsCanvasBackdrop(
         backdropLocator = backdropLocator,
 
         backdropConfirmedAbsent = backdropConfirmedAbsent,
+
+        releaseCarriedBackdrop = backdropConfirmedAbsent || canonicalSlotAbsent,
 
         poster = if (backdropConfirmedAbsent) posterRoleArtwork(hero?.posterLocator) else null,
         posterPresentation = posterPresentation,
@@ -171,6 +177,8 @@ internal fun TvDetailsBackdropCanvas(
 
         backdropConfirmedAbsent = backdropLocator == null,
 
+        releaseCarriedBackdrop = backdropLocator == null,
+
         poster = null,
         posterPresentation = HeroPosterPresentation.Corner,
         underlay = DetailsArtwork(),
@@ -187,6 +195,8 @@ internal fun TvDetailsBackdropCanvas(
 private fun DetailsCanvasBackdrop(
     backdropLocator: String?,
     backdropConfirmedAbsent: Boolean,
+
+    releaseCarriedBackdrop: Boolean,
     poster: MediaArtworkRef?,
     posterPresentation: HeroPosterPresentation,
     underlay: DetailsArtwork,
@@ -205,28 +215,32 @@ private fun DetailsCanvasBackdrop(
 
     val confirmedAbsencePoster = poster?.takeIf { backdropConfirmedAbsent && backdropLocator == null }
 
+    val ownBackdropRef = backdropLocator?.let { MediaArtworkRef(it, ArtworkPolicy.BACKDROP) }
+
     var ownBackdropReady by remember(backdropLocator) { mutableStateOf(false) }
 
     var ownBackdropSettled by remember(backdropLocator) { mutableStateOf(false) }
 
     var ownBackdropOnScreen by remember(backdropLocator) { mutableStateOf(false) }
-    val ownBackdropAlpha = remember(backdropLocator) { Animatable(0f) }
+
+    val ownBackdropHold = remember { HeroArtworkHold() }
 
     var underlayReady by remember(underlayRef?.locator) { mutableStateOf(false) }
     var underlaySettled by remember(underlayRef?.locator) { mutableStateOf(false) }
 
     var underlayOnScreen by remember(underlayRef?.locator) { mutableStateOf(false) }
 
+    val underlayHold = remember { HeroArtworkHold() }
+
     val underlayAlpha = remember { Animatable(1f) }
     var underlayDrawn by remember { mutableStateOf(true) }
 
-    val underlayWanted = !backdropConfirmedAbsent && !(backdropLocator != null && ownBackdropReady)
+    val backdropCarriesImage = ownBackdropReady || ownBackdropHold.displayed != null
+    val underlayCarriesImage = underlayDrawn &&
+        (hasUnderlayArtwork || underlayHold.displayed != null)
 
-    LaunchedEffect(backdropLocator, ownBackdropReady) {
-        if (backdropLocator != null && ownBackdropReady) {
-            ownBackdropAlpha.animateTo(1f, tween(InfusionTvMotion.ARTWORK_FADE_MILLIS))
-        }
-    }
+    val underlayWanted = !backdropConfirmedAbsent && !backdropCarriesImage
+
     LaunchedEffect(underlayWanted) {
         if (underlayWanted) {
             if (underlayAlpha.value < 1f) {
@@ -239,10 +253,9 @@ private fun DetailsCanvasBackdrop(
         }
     }
 
-    val showUnderlay = underlayDrawn && hasUnderlayArtwork
+    val showUnderlay = underlayCarriesImage
 
-    val backdropDrawn = backdropLocator != null && ownBackdropReady
-    val neutralOwnsCanvas = !showUnderlay && !backdropDrawn
+    val neutralOwnsCanvas = !underlayCarriesImage && !backdropCarriesImage
 
     val gradientAlpha = animateFloatAsState(
         targetValue = if (neutralOwnsCanvas) 1f else 0f,
@@ -305,52 +318,50 @@ private fun DetailsCanvasBackdrop(
                         .testTag(HeroUnderlayTag)
                         .graphicsLayer { alpha = underlayAlpha.value },
                 ) {
-                    if (underlayRef != null) {
-                        ArtworkImage(
-                            request = ArtworkRequest.of(underlayRef.locator, underlayRef.policy, screenTarget),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-
-                            onLoaded = {
-                                underlayOnScreen = true
-                                underlayReady = true
-                            },
-                            onSettled = { loaded ->
-                                underlaySettled = true
-                                if (loaded) underlayReady = true
-                            },
-                        )
-                    }
-                }
-            }
-
-            if (backdropLocator != null) {
-                Box(modifier = Modifier.fillMaxSize().testTag(HeroBackdropTag)) {
-
-                    ArtworkImage(
-                        request = ArtworkRequest.of(
-                            backdropLocator,
-                            ArtworkPolicy.BACKDROP,
-                            screenTarget,
-                        ),
-                        contentDescription = "Backdrop",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .testTag(HeroBackdropArtTag)
-                            .graphicsLayer { alpha = ownBackdropAlpha.value },
-                        alignment = Alignment.TopEnd,
+                    HeroArtworkLayer(
+                        hold = underlayHold,
+                        ref = underlayRef,
+                        target = screenTarget,
+                        release = !underlayWanted,
+                        alignment = Alignment.Center,
 
                         onLoaded = {
-                            ownBackdropOnScreen = true
-                            ownBackdropReady = true
+                            underlayOnScreen = true
+                            underlayReady = true
                         },
-
                         onSettled = { loaded ->
-                            ownBackdropSettled = true
-                            if (loaded) ownBackdropReady = true
+                            underlaySettled = true
+                            if (loaded) underlayReady = true
                         },
                     )
                 }
+            }
+
+            val backdropLayerPresents = backdropLocator != null || ownBackdropHold.displayed != null
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (backdropLayerPresents) Modifier.testTag(HeroBackdropTag) else Modifier),
+            ) {
+
+                HeroArtworkLayer(
+                    hold = ownBackdropHold,
+                    ref = ownBackdropRef,
+                    target = screenTarget,
+                    artTag = HeroBackdropArtTag,
+                    release = releaseCarriedBackdrop,
+                    alignment = Alignment.TopEnd,
+
+                    onLoaded = {
+                        ownBackdropOnScreen = true
+                        ownBackdropReady = true
+                    },
+
+                    onSettled = { loaded ->
+                        ownBackdropSettled = true
+                        if (loaded) ownBackdropReady = true
+                    },
+                )
             }
 
             if (confirmedAbsencePoster != null) {
@@ -412,6 +423,88 @@ private fun HeroAbsencePoster(
             arrivalFadeMillis = InfusionTvMotion.ARTWORK_FADE_MILLIS,
             contentScale = ContentScale.Fit,
         )
+    }
+}
+
+internal const val HeroRetainedArtTag = "canonical:hero:retained"
+
+internal class HeroArtworkHold {
+    var displayed: MediaArtworkRef? by mutableStateOf(null)
+}
+
+internal fun heroArtworkRequest(slot: MediaArtworkRef, target: IntSize): ArtworkRequest = ArtworkRequest(
+    locator = slot.locator,
+    policy = slot.policy,
+    targetWidthPx = target.width,
+    targetHeightPx = target.height,
+    retainsPreviousSuccess = false,
+)
+
+@Composable
+private fun HeroArtworkLayer(
+    hold: HeroArtworkHold,
+    ref: MediaArtworkRef?,
+    target: IntSize,
+    modifier: Modifier = Modifier,
+
+    artTag: String? = null,
+    contentDescription: String? = null,
+    alignment: Alignment = Alignment.Center,
+
+    release: Boolean = false,
+    onLoaded: () -> Unit = {},
+    onSettled: (Boolean) -> Unit = {},
+) {
+    val loader = LocalArtworkLoader.current
+
+    LaunchedEffect(release) {
+        if (release) hold.displayed = null
+    }
+
+    LaunchedEffect(ref, release) {
+        val requested = ref
+        if (release || requested == null) return@LaunchedEffect
+        val carried = hold.displayed
+        if (carried != null && carried.locator == requested.locator && carried.policy == requested.policy) {
+            return@LaunchedEffect
+        }
+        val seam = loader ?: return@LaunchedEffect
+        val available = seam.load(heroArtworkRequest(requested, target))
+        if (available != null) {
+            hold.displayed = requested
+            onLoaded()
+            onSettled(true)
+        } else {
+            hold.displayed = null
+            onSettled(false)
+        }
+    }
+    val displayed = hold.displayed
+    Box(modifier = modifier.fillMaxSize()) {
+
+        Crossfade(
+            targetState = displayed,
+            animationSpec = tween(InfusionTvMotion.ARTWORK_FADE_MILLIS),
+            label = "hero-artwork-crossfade",
+        ) { slot ->
+            if (slot != null) {
+                val isRequested = slot.locator == ref?.locator && slot.policy == ref?.policy
+                ArtworkImage(
+                    request = heroArtworkRequest(slot, target),
+                    contentDescription = contentDescription,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            when {
+                                isRequested && artTag != null -> Modifier.testTag(artTag)
+                                isRequested -> Modifier
+                                else -> Modifier.testTag(HeroRetainedArtTag)
+                            },
+                        ),
+                    alignment = alignment,
+                )
+            }
+        }
     }
 }
 

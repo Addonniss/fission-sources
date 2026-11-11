@@ -12,6 +12,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Typography
+import dev.infusion.core.domain.appearance.ThemePreset
 import dev.infusion.core.domain.appearance.TopShelfAppearance
 import dev.infusion.tv.ui.presentation.ContentCardPresentation
 import dev.infusion.tv.ui.presentation.LocalContentCardPresentation
@@ -20,44 +21,69 @@ import dev.infusion.tv.ui.presentation.LocalContentCardPresentation
 fun InfusionTvTheme(
     accent: Color = InfusionTvAppearance.DefaultAccentColor,
 
+    theme: ThemePreset = ThemePreset.DEFAULT,
+
+    themeAccent: Boolean = false,
+
     cardPresentation: ContentCardPresentation = ContentCardPresentation.Default,
 
     topShelfAppearance: TopShelfAppearance = TopShelfAppearance.DEFAULT,
     content: @Composable () -> Unit,
 ) {
+
+    val tokens = infusionThemeTokensFor(theme, accent, themeAccent)
+
+    val effectiveAccent = if (themeAccent) tokens.nativeAccent else accent
     MaterialTheme(
-        colorScheme = infusionTvColorScheme(accent),
-        typography = infusionTvTypography(),
+        colorScheme = infusionTvColorScheme(tokens),
+        typography = infusionTvTypography(tokens),
     ) {
         CompositionLocalProvider(
-            LocalContentColor provides InfusionTvAppearance.TextPrimary,
-            LocalInfusionAccent provides accent,
+            LocalContentColor provides tokens.textPrimary,
+            LocalInfusionAccent provides effectiveAccent,
+            LocalInfusionTheme provides tokens,
             LocalContentCardPresentation provides cardPresentation,
             LocalTvTopShelfAppearance provides topShelfAppearance,
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(InfusionTvAppearance.OledBlack),
+
+                    .background(tokens.backgroundTop),
             ) {
+                InfusionAmbientBackdrop()
                 content()
             }
         }
     }
 }
 
+private fun infusionThemeTokensFor(
+    theme: ThemePreset,
+    accent: Color,
+    themeAccent: Boolean,
+): InfusionThemeTokens =
+    infusionThemeTokens(
+        preset = theme,
+        accent = accent,
+
+        accentOverridden = !theme.isClassic && !themeAccent,
+    )
+
 val LocalTvTopShelfAppearance = compositionLocalOf { TopShelfAppearance.DEFAULT }
 
-fun infusionTvTypography(): Typography = Typography().let { library ->
+fun infusionTvTypography(
+    tokens: InfusionThemeTokens = classicThemeTokens(InfusionTvAppearance.DefaultAccentColor),
+): Typography = Typography().let { library ->
     Typography(
         bodyLarge = InfusionTvScaleCalibration.Type.Body,
         labelLarge = InfusionTvScaleCalibration.Type.Emphasis,
-        displayLarge = library.displayLarge.withProductFontFeatures(),
-        displayMedium = library.displayMedium.withProductFontFeatures(),
-        displaySmall = library.displaySmall.withProductFontFeatures(),
-        headlineLarge = library.headlineLarge.withProductFontFeatures(),
-        headlineMedium = library.headlineMedium.withProductFontFeatures(),
-        headlineSmall = library.headlineSmall.withProductFontFeatures(),
+        displayLarge = library.displayLarge.withProductFontFeatures().withDisplayFace(tokens),
+        displayMedium = library.displayMedium.withProductFontFeatures().withDisplayFace(tokens),
+        displaySmall = library.displaySmall.withProductFontFeatures().withDisplayFace(tokens),
+        headlineLarge = library.headlineLarge.withProductFontFeatures().withDisplayFace(tokens),
+        headlineMedium = library.headlineMedium.withProductFontFeatures().withDisplayFace(tokens),
+        headlineSmall = library.headlineSmall.withProductFontFeatures().withDisplayFace(tokens),
         titleLarge = library.titleLarge.withProductFontFeatures(),
         titleMedium = library.titleMedium.withProductFontFeatures(),
         titleSmall = library.titleSmall.withProductFontFeatures(),
@@ -67,6 +93,17 @@ fun infusionTvTypography(): Typography = Typography().let { library ->
         labelSmall = library.labelSmall.withProductFontFeatures(),
     )
 }
+
+private fun TextStyle.withDisplayFace(tokens: InfusionThemeTokens): TextStyle =
+    if (!tokens.premium) {
+        this
+    } else {
+        copy(
+            fontFamily = tokens.displayFamily,
+            fontWeight = tokens.displayWeight,
+            letterSpacing = tokens.displayLetterSpacing,
+        )
+    }
 
 private fun TextStyle.withProductFontFeatures() =
     copy(fontFeatureSettings = InfusionTvFontFeatureSettings)

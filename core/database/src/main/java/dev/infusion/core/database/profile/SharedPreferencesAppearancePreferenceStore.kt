@@ -9,6 +9,7 @@ import dev.infusion.core.domain.appearance.ProfileAppearancePreferences
 import dev.infusion.core.domain.appearance.SplashScreenMode
 import dev.infusion.core.domain.appearance.TmdbBackdropQuality
 import dev.infusion.core.domain.appearance.TmdbLandscapeCardQuality
+import dev.infusion.core.domain.appearance.ThemePreset
 import dev.infusion.core.domain.appearance.TopShelfAppearance
 
 class SharedPreferencesAppearancePreferenceStore(
@@ -64,6 +65,8 @@ class SharedPreferencesAppearancePreferenceStore(
             ),
 
             contextMenuBadge = prefs.getBoolean(contextMenuBadgeKey(profileId), true),
+
+            theme = ThemePreset.orDefault(prefs.getString(themeKey(profileId), null)),
         )
 
     override fun setPreferences(profileId: String, preferences: ProfileAppearancePreferences) {
@@ -93,6 +96,7 @@ class SharedPreferencesAppearancePreferenceStore(
                 preferences.tmdbLandscapeCardQuality.storageKey,
             )
             .putBoolean(contextMenuBadgeKey(profileId), preferences.contextMenuBadge)
+            .putString(themeKey(profileId), preferences.theme.storageKey)
             .apply()
     }
 
@@ -115,6 +119,7 @@ class SharedPreferencesAppearancePreferenceStore(
             .remove(tmdbBackdropQualityKey(profileId))
             .remove(tmdbLandscapeCardQualityKey(profileId))
             .remove(contextMenuBadgeKey(profileId))
+            .remove(themeKey(profileId))
             .apply()
     }
 
@@ -159,6 +164,8 @@ class SharedPreferencesAppearancePreferenceStore(
     private fun contextMenuBadgeKey(profileId: String): String =
         "$CONTEXT_MENU_BADGE_PREFIX$profileId"
 
+    private fun themeKey(profileId: String): String = "$THEME_PREFIX$profileId"
+
     private companion object {
         const val PREFS_NAME = "infusion_appearance_preferences"
         const val ACCENT_PREFIX = "appearance_accent:"
@@ -177,5 +184,6 @@ class SharedPreferencesAppearancePreferenceStore(
         const val TMDB_BACKDROP_QUALITY_PREFIX = "appearance_tmdb_backdrop_quality:"
         const val TMDB_LANDSCAPE_CARD_QUALITY_PREFIX = "appearance_tmdb_landscape_card_quality:"
         const val CONTEXT_MENU_BADGE_PREFIX = "appearance_context_menu_badge:"
+        const val THEME_PREFIX = "appearance_theme:"
     }
 }

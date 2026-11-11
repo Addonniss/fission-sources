@@ -16,12 +16,16 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Text
 import dev.infusion.tv.ui.theme.InfusionTvScaleCalibration
+import dev.infusion.tv.ui.theme.LocalInfusionTheme
+import dev.infusion.tv.ui.theme.settingsValueChipFill
+import dev.infusion.tv.ui.theme.themeValueChip
 
 internal enum class SettingsRowPresentation {
 
@@ -37,6 +41,10 @@ internal object SettingsRowPresentationMetrics {
     val HelpGap: Dp = 2.dp
 
     val TrailingGap: Dp = 12.dp
+
+    val ValueChipHorizontalPadding: Dp = 10.dp
+
+    val ValueChipVerticalPadding: Dp = 3.dp
 }
 
 @Composable
@@ -84,9 +92,21 @@ internal fun SettingsRowBody(
     valueColor: Color = Color.Unspecified,
 
     valueModifier: Modifier = Modifier,
+
+    valueContent: (@Composable () -> Unit)? = null,
+
+    valueChip: Boolean = true,
+
+    valueChipTag: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val expanded = presentation == SettingsRowPresentation.EXPANDED
+
+    val chipFill = if (valueChip && value.isNotBlank() && valueContent == null) {
+        settingsValueChipFill(LocalInfusionTheme.current, focused)
+    } else {
+        null
+    }
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -101,15 +121,42 @@ internal fun SettingsRowBody(
             labelColor = labelColor,
         )
         if (expanded) Spacer(Modifier.width(SettingsRowPresentationMetrics.ValueGap))
-        Text(
-            value,
-            style = InfusionTvScaleCalibration.Type.SettingsContent,
-            color = valueColor,
-            maxLines = if (expanded) 1 else Int.MAX_VALUE,
-            overflow = if (expanded) TextOverflow.Ellipsis else TextOverflow.Clip,
-            modifier = valueModifier,
-        )
-        trailing?.invoke()
+        if (valueContent != null) {
+
+            valueContent()
+        } else if (chipFill != null) {
+
+            Row(
+                modifier = Modifier
+                    .then(if (valueChipTag != null) Modifier.testTag(valueChipTag) else Modifier)
+                    .themeValueChip(focused)
+                    .padding(
+                        horizontal = SettingsRowPresentationMetrics.ValueChipHorizontalPadding,
+                        vertical = SettingsRowPresentationMetrics.ValueChipVerticalPadding,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    value,
+                    style = InfusionTvScaleCalibration.Type.SettingsContent,
+                    color = Color.Unspecified,
+                    maxLines = if (expanded) 1 else Int.MAX_VALUE,
+                    overflow = if (expanded) TextOverflow.Ellipsis else TextOverflow.Clip,
+                    modifier = valueModifier,
+                )
+                trailing?.invoke()
+            }
+        } else {
+            Text(
+                value,
+                style = InfusionTvScaleCalibration.Type.SettingsContent,
+                color = valueColor,
+                maxLines = if (expanded) 1 else Int.MAX_VALUE,
+                overflow = if (expanded) TextOverflow.Ellipsis else TextOverflow.Clip,
+                modifier = valueModifier,
+            )
+        }
+        if (chipFill == null) trailing?.invoke()
     }
 }
 

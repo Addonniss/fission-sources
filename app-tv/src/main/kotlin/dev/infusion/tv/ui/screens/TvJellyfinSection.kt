@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
@@ -81,7 +82,10 @@ import dev.infusion.tv.ui.theme.InfusionTvAppearance
 import dev.infusion.tv.ui.theme.InfusionTvButton
 import dev.infusion.tv.ui.theme.InfusionTvContour
 import dev.infusion.tv.ui.theme.InfusionTvScaleCalibration
+import dev.infusion.tv.ui.theme.LocalInfusionTheme
 import dev.infusion.tv.ui.theme.infusionAccentContentColor
+import dev.infusion.tv.ui.theme.themeAvatarHalo
+import dev.infusion.tv.ui.theme.themeStatusPill
 
 internal const val JellyfinFocusCredentials = "jellyfin:connect:credentials"
 internal const val JellyfinFocusApiKey = "jellyfin:connect:api-key"
@@ -339,12 +343,20 @@ private fun JellyfinConnectionSummary(
     sourceLabel: String?,
     connectedUser: JellyfinConnectedUser?,
 ) {
+
+    val tokens = LocalInfusionTheme.current
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(SettingsJellyfinSummary),
-        shape = InfusionTvContour.Shape,
-        colors = SurfaceDefaults.colors(containerColor = InfusionTvAppearance.Panel),
+        shape = if (tokens.premium) {
+            RoundedCornerShape(tokens.panelRadius)
+        } else {
+            InfusionTvContour.Shape
+        },
+        colors = SurfaceDefaults.colors(
+            containerColor = if (tokens.premium) tokens.glass else InfusionTvAppearance.Panel,
+        ),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -357,7 +369,9 @@ private fun JellyfinConnectionSummary(
                     "No production source configured."
                 },
                 style = InfusionTvScaleCalibration.Type.SettingsContent,
-                modifier = Modifier.testTag(SettingsJellyfinSummarySource),
+                modifier = Modifier
+                    .testTag(SettingsJellyfinSummarySource)
+                    .themeStatusPill(),
             )
             if (connectedUser != null) {
                 JellyfinConnectedUserRow(connectedUser)
@@ -404,6 +418,8 @@ private fun JellyfinConnectedUserRow(user: JellyfinConnectedUser) {
                         .testTag(SettingsJellyfinConnectedUserAvatarImage),
                 )
             }
+
+            Box(modifier = Modifier.matchParentSize().themeAvatarHalo())
         }
         Text(
             user.userName ?: "Jellyfin user",
@@ -448,6 +464,8 @@ private fun JellyfinActionRow(
                 focused = false,
                 valueModifier = valueModifier,
                 valueColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+
+                valueChip = false,
             )
         }
         return
