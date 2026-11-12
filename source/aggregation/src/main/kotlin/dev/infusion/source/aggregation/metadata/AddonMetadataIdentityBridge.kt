@@ -43,6 +43,8 @@ class AddonMetadataIdentityBridge(
             StremioContentType.SERIES -> MediaType.SHOW
             StremioContentType.CHANNEL,
             StremioContentType.TV,
+
+            StremioContentType.ALL,
             StremioContentType.UNKNOWN,
             -> null
         }

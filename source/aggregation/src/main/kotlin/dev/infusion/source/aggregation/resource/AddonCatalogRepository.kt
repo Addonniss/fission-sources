@@ -14,5 +14,13 @@ interface AddonCatalogRepository {
         catalogId: String,
         extras: List<Pair<String, String>> = emptyList(),
         skip: Int? = null,
+        identitySource: CatalogIdentitySource = CatalogIdentitySource.MANIFEST,
     ): StremioResult<StremioCatalogResponse>
+}
+
+enum class CatalogIdentitySource {
+
+    MANIFEST,
+
+    EXPLICIT_REFERENCE,
 }

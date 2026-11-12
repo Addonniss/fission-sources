@@ -78,12 +78,13 @@ data class StremioManifestDto(
     val behaviorHints: StremioBehaviorHints?,
     val stremioAddonsConfig: StremioAddonsConfig?,
     val language: String?,
-    val configVersion: Int?,
+
+    val configVersion: Long?,
     val timestamp: String?,
 ) {
 
     fun supports(resource: Resource, type: StremioContentType): Boolean {
-        if (type == StremioContentType.UNKNOWN) return false
+        if (!type.isDeclaredContentType) return false
         val entry = resources.firstOrNull { it.name == resource } ?: return false
         return type in entry.types
     }
@@ -110,6 +111,8 @@ data class StremioManifestDto(
         const val MAX_EXTRA_OPTIONS_LIMIT = 1024
         const val MAX_LOGO_BACKGROUND_BYTES = 4096
         const val MAX_LANGUAGE_BYTES = 64
+
+        const val MAX_CONFIG_VERSION = Long.MAX_VALUE
         const val MAX_TIMESTAMP_BYTES = 128
         const val MAX_ADDONS_CONFIG_CATALOG_BYTES = 512
         const val MAX_ADDONS_CONFIG_ADDONS = 64
@@ -154,7 +157,7 @@ object ManifestParser {
             behaviorHints = parseBehaviorHints(root),
             stremioAddonsConfig = parseAddonsConfig(root),
             language = optionalBoundedString(root, "language", StremioManifestDto.MAX_LANGUAGE_BYTES, "language"),
-            configVersion = intOrNull(root, "configVersion", max = 1_000_000)?.toInt(),
+            configVersion = intOrNull(root, "configVersion", max = StremioManifestDto.MAX_CONFIG_VERSION),
             timestamp = optionalBoundedString(root, "timestamp", StremioManifestDto.MAX_TIMESTAMP_BYTES, "timestamp"),
         )
     }

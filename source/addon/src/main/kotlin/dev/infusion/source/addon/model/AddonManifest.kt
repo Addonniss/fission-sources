@@ -51,14 +51,15 @@ data class AddonManifest(
     val behaviorHints: AddonBehaviorHints?,
     val stremioAddonsConfig: AddonStremioAddonsConfig?,
     val language: String?,
-    val configVersion: Int?,
+
+    val configVersion: Long?,
     val timestamp: String?,
 ) {
 
     val displayName: String get() = name
 
     fun supports(resource: Resource, type: StremioContentType): Boolean {
-        if (type == StremioContentType.UNKNOWN) return false
+        if (!type.isDeclaredContentType) return false
         val entry = resources.firstOrNull { it.resource == resource } ?: return false
         return type in entry.types
     }

@@ -69,6 +69,7 @@ object MetaParser {
         val id = requiredString(metaObj, "id")
         StremioId.validateOrThrow(id)
         val type = StremioContentType.parse(requiredString(metaObj, "type"))
+            ?.takeIf { it.isDeclaredContentType }
             ?: throw WireException(DiagnosticReason.SCHEMA_INVALID, "unsupported meta type")
 
         if (id != requestedId) {

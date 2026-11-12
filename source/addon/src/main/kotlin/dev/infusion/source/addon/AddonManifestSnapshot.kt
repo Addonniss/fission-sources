@@ -12,6 +12,7 @@ import dev.infusion.source.stremio.wire.StremioExtra
 import dev.infusion.source.stremio.wire.StremioManifestDto
 import dev.infusion.source.stremio.wire.StremioResource
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 data class AddonManifestSnapshot(
@@ -28,7 +29,8 @@ data class AddonManifestSnapshot(
     val behaviorHints: SnapshotBehaviorHints?,
     val stremioAddonsConfig: SnapshotAddonsConfig?,
     val language: String?,
-    val configVersion: Int?,
+
+    val configVersion: Long?,
     val timestamp: String?,
 ) {
     data class SnapshotResource(
@@ -287,12 +289,22 @@ object AddonManifestSnapshotCodec {
                 )
             },
             language = o.optString("language").takeIf { it.isNotEmpty() },
-            configVersion = if (o.isNull("configVersion") || !o.has("configVersion")) null else o.optInt("configVersion"),
+            configVersion = o.optIntegralLong("configVersion"),
             timestamp = o.optString("timestamp").takeIf { it.isNotEmpty() },
         )
     }
 
-    private fun String.toContentType(): StremioContentType = StremioContentType.parse(this) ?: StremioContentType.UNKNOWN
+    private fun JSONObject.optIntegralLong(key: String): Long? {
+        if (!has(key) || isNull(key)) return null
+        return when (val value = get(key)) {
+            is Int -> value.toLong()
+            is Long -> value
+            else -> throw JSONException("$key must be an integer")
+        }
+    }
+
+    private fun String.toContentType(): StremioContentType =
+        StremioContentType.parse(this)?.takeIf { it.isDeclaredContentType } ?: StremioContentType.UNKNOWN
 
     private inline fun <T> JSONArray.mapElements(transform: (JSONObject) -> T): List<T> {
         val out = ArrayList<T>(length())

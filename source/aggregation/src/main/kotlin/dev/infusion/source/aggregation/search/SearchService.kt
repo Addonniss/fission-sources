@@ -241,7 +241,8 @@ class SearchService(
         StremioContentType.MOVIE -> dev.infusion.core.model.TitleKind.MOVIE
         StremioContentType.SERIES, StremioContentType.TV -> dev.infusion.core.model.TitleKind.SERIES
         StremioContentType.CHANNEL -> dev.infusion.core.model.TitleKind.CLIP
-        StremioContentType.UNKNOWN -> null
+
+        StremioContentType.ALL, StremioContentType.UNKNOWN -> null
     }
 
     private companion object {

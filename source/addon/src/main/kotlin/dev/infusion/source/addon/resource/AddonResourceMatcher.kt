@@ -8,10 +8,15 @@ import dev.infusion.source.stremio.wire.Resource
 object AddonResourceMatcher {
 
     fun supports(snapshot: AddonManifestSnapshot, resource: Resource, type: StremioContentType): Boolean {
-        if (type == StremioContentType.UNKNOWN) return false
+        if (!type.isDeclaredContentType) return false
         if (resource == Resource.ADDON_CATALOG) return false
         val entry = snapshot.resources.firstOrNull { Resource.parse(it.name) == resource } ?: return false
         return type in effectiveTypes(snapshot, resource)
+    }
+
+    fun supportsCatalogWildcard(snapshot: AddonManifestSnapshot): Boolean {
+        val entry = snapshot.resources.firstOrNull { Resource.parse(it.name) == Resource.CATALOG } ?: return false
+        return effectiveTypes(snapshot, Resource.CATALOG).any { it.isDeclaredContentType }
     }
 
     fun idMatches(snapshot: AddonManifestSnapshot, resource: Resource, id: String): Boolean {

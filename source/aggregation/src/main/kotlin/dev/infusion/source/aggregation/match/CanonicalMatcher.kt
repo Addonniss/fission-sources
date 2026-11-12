@@ -118,6 +118,7 @@ class CanonicalMatcher(
             -> dev.infusion.core.model.TitleKind.SERIES
 
             dev.infusion.source.stremio.policy.StremioContentType.CHANNEL,
+            dev.infusion.source.stremio.policy.StremioContentType.ALL,
             dev.infusion.source.stremio.policy.StremioContentType.UNKNOWN,
             -> null
         }

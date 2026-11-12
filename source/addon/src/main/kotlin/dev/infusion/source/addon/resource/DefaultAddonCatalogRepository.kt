@@ -2,6 +2,7 @@ package dev.infusion.source.addon.resource
 
 import dev.infusion.source.addon.repository.InstalledAddonRuntime
 import dev.infusion.source.aggregation.resource.AddonCatalogRepository
+import dev.infusion.source.aggregation.resource.CatalogIdentitySource
 import dev.infusion.source.aggregation.resource.DeclaredCatalog
 import dev.infusion.source.stremio.StremioResult
 import dev.infusion.source.stremio.policy.StremioContentType
@@ -30,18 +31,26 @@ class DefaultAddonCatalogRepository(
         catalogId: String,
         extras: List<Pair<String, String>>,
         skip: Int?,
+        identitySource: CatalogIdentitySource,
     ): StremioResult<StremioCatalogResponse> {
         val runtime = runtimes.runtimeFor(addonId) ?: return notInstalled()
 
         if (!runtime.installed.enabled || !runtime.providerState.isEnabled) return disabled()
         val snapshot = runtime.installed.snapshot
 
-        if (!AddonResourceMatcher.supports(snapshot, Resource.CATALOG, type)) return notEligible()
-
         val declared = snapshot.catalogs.firstOrNull { it.id == catalogId && it.type == type }
-            ?: return routeRejected()
+        if (type == StremioContentType.ALL) {
 
-        val allowedExtras = setOf("search", "skip") + declared.extras.map { it.name }
+            if (identitySource != CatalogIdentitySource.EXPLICIT_REFERENCE) return routeRejected()
+
+            if (!AddonResourceMatcher.supportsCatalogWildcard(snapshot)) return notEligible()
+        } else {
+            if (!AddonResourceMatcher.supports(snapshot, Resource.CATALOG, type)) return notEligible()
+
+            if (declared == null && identitySource == CatalogIdentitySource.MANIFEST) return routeRejected()
+        }
+
+        val allowedExtras = setOf("search", "skip") + declared?.extras?.map { it.name }.orEmpty()
         val withSkip = if (skip != null) extras + ("skip" to skip.toString()) else extras
         return runtime.useClient { client ->
             client.catalog(

@@ -49,7 +49,9 @@ object CatalogParser {
             if (!seen.add(id)) {
                 throw WireException(DiagnosticReason.SCHEMA_INVALID, "duplicate meta id in catalog")
             }
+
             val type = StremioContentType.parse(requiredString(o, "type"))
+                ?.takeIf { it.isDeclaredContentType }
                 ?: throw WireException(DiagnosticReason.SCHEMA_INVALID, "unsupported meta type in catalog")
             val name = requiredString(o, "name")
             StremioId.validateBoundedString(name, StremioId.MAX_NAME_BYTES, "meta name")

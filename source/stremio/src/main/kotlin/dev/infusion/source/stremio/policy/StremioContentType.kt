@@ -6,14 +6,23 @@ enum class StremioContentType(val wire: String) {
     CHANNEL("channel"),
     TV("tv"),
 
+    ALL("all"),
+
     UNKNOWN("unknown"),
     ;
+
+    val isDeclaredContentType: Boolean
+        get() = this != ALL && this != UNKNOWN
+
+    val routableAsCatalog: Boolean
+        get() = this != UNKNOWN
 
     companion object {
         fun parse(value: String): StremioContentType? = entries.firstOrNull { it.wire == value }
 
-        fun isKnown(value: String): Boolean = parse(value)?.let { it != UNKNOWN } ?: false
+        fun isKnown(value: String): Boolean = parse(value)?.let { it.isDeclaredContentType } ?: false
 
-        fun parseOrUnknown(value: String): StremioContentType = parse(value) ?: UNKNOWN
+        fun parseOrUnknown(value: String): StremioContentType =
+            parse(value)?.takeIf { it.isDeclaredContentType } ?: UNKNOWN
     }
 }

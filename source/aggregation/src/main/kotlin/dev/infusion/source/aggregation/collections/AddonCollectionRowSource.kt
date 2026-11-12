@@ -13,6 +13,7 @@ import dev.infusion.source.aggregation.match.ExternalIdExtractor
 import dev.infusion.source.aggregation.resource.AddonArtworkRepository
 import dev.infusion.source.aggregation.resource.AddonCatalogRepository
 import dev.infusion.source.aggregation.resource.AddonFetchedItemArtwork
+import dev.infusion.source.aggregation.resource.CatalogIdentitySource
 import dev.infusion.source.aggregation.resource.DeclaredCatalog
 import dev.infusion.source.aggregation.discover.addonArtworkRef
 import dev.infusion.source.stremio.StremioResult
@@ -47,26 +48,40 @@ class AddonCollectionRowSource(
         val resolved = resolveCatalog(runtimes, preferredAddonId, catalogId, definition.catalogType)
             ?: return CollectionBrowseOutcome.Unsupported(
 
-                if (preferredAddonId != null && runtimes.none { it.addonId == preferredAddonId }) {
+                if (preferredAddonId != null && runtimes.none { it.answersTo(preferredAddonId) }) {
                     ADDON_UNAVAILABLE
                 } else {
                     CATALOG_UNAVAILABLE
                 },
             )
-        val (runtime, catalog) = resolved
+        val (runtime, catalog, type) = resolved
 
         val extras = extrasOf(definition, catalog)
             ?: return CollectionBrowseOutcome.Unsupported(QUERY_UNSUPPORTED)
         val skip = cursor?.toIntOrNull()?.takeIf { it > 0 }
 
         return try {
-            when (val result = catalogRepository.catalog(runtime.addonId, catalog.type, catalog.id, extras, skip)) {
+            when (
+                val result = catalogRepository.catalog(
+                    addonId = runtime.addonId,
+                    type = type,
+                    catalogId = catalog?.id ?: catalogId,
+                    extras = extras,
+                    skip = skip,
+
+                    identitySource = if (catalog != null) {
+                        CatalogIdentitySource.MANIFEST
+                    } else {
+                        CatalogIdentitySource.EXPLICIT_REFERENCE
+                    },
+                )
+            ) {
                 is StremioResult.Ok -> {
                     val metas = result.value.metas
 
                     artworkRepository.ownFetchedPage(
                         addonId = runtime.addonId,
-                        ownerKey = ownerKey ?: rowOwnerKey(definition, catalog),
+                        ownerKey = ownerKey ?: rowOwnerKey(definition, type, catalog?.id ?: catalogId),
                         items = metas.map { preview ->
                             AddonFetchedItemArtwork(
                                 nativeItemId = preview.id,
@@ -77,10 +92,10 @@ class AddonCollectionRowSource(
                         },
                     )
                     val items = metas.mapNotNull { preview ->
-                        preview.toBrowseItem(catalog.type, runtime.addonId)
+                        preview.toBrowseItem(type, runtime.addonId)
                     }
 
-                    val supportsSkip = catalog.extras.any { it.equals(SKIP_EXTRA, ignoreCase = true) }
+                    val supportsSkip = catalog?.extras?.any { it.equals(SKIP_EXTRA, ignoreCase = true) } == true
                     val hasMore = supportsSkip && metas.isNotEmpty()
                     CollectionBrowseOutcome.Loaded(
                         CollectionBrowsePage(
@@ -99,37 +114,49 @@ class AddonCollectionRowSource(
         }
     }
 
+    private data class ResolvedCatalog(
+        val runtime: AddonRuntimeDescriptor,
+        val declared: DeclaredCatalog?,
+        val type: StremioContentType,
+    )
+
     private fun resolveCatalog(
         runtimes: List<AddonRuntimeDescriptor>,
         preferredAddonId: String?,
         catalogId: String,
         catalogType: String?,
-    ): Pair<AddonRuntimeDescriptor, DeclaredCatalog>? {
+    ): ResolvedCatalog? {
         val type = catalogType?.trim()?.lowercase()?.let { StremioContentType.parse(it) }
         fun matches(catalog: DeclaredCatalog): Boolean =
             catalog.id == catalogId && (type == null || catalog.type == type)
 
         if (preferredAddonId != null) {
-            val runtime = runtimes.firstOrNull { it.addonId == preferredAddonId }
+            val runtime = runtimes.firstOrNull { it.answersTo(preferredAddonId) }
             val catalog = runtime?.declaredCatalogs?.firstOrNull(::matches)
-            if (runtime != null && catalog != null) return runtime to catalog
+            if (runtime != null && catalog != null) return ResolvedCatalog(runtime, catalog, catalog.type)
         }
         for (runtime in runtimes) {
             val catalog = runtime.declaredCatalogs.firstOrNull(::matches)
-            if (catalog != null) return runtime to catalog
+            if (catalog != null) return ResolvedCatalog(runtime, catalog, catalog.type)
         }
-        return null
+
+        if (preferredAddonId == null || type == null || !type.routableAsCatalog) return null
+        val runtime = runtimes.firstOrNull { it.answersTo(preferredAddonId) } ?: return null
+        return ResolvedCatalog(runtime, declared = null, type = type)
     }
+
+    private fun AddonRuntimeDescriptor.answersTo(reference: String): Boolean =
+        addonId == reference || manifestId == reference
 
     private fun extrasOf(
         definition: CollectionSourceDefinition,
-        catalog: DeclaredCatalog,
+        catalog: DeclaredCatalog?,
     ): List<Pair<String, String>>? {
         val sortBy = definition.sortBy?.trim()?.takeIf { it.isNotEmpty() }
         val sortHow = definition.sortHow?.trim()?.takeIf { it.isNotEmpty() }
         if (sortBy != null || sortHow != null) {
 
-            val sortKey = catalog.extras.firstOrNull { it.equals(SORT_EXTRA, ignoreCase = true) }
+            val sortKey = catalog?.extras?.firstOrNull { it.equals(SORT_EXTRA, ignoreCase = true) }
                 ?: return null
             if (sortBy == null) return null
             val value = if (sortHow == null) sortBy else "$sortBy.$sortHow"
@@ -150,14 +177,15 @@ class AddonCollectionRowSource(
         return extras
     }
 
-    private fun isAllowedExtra(key: String, catalog: DeclaredCatalog): Boolean =
+    private fun isAllowedExtra(key: String, catalog: DeclaredCatalog?): Boolean =
         key.equals(SEARCH_EXTRA, ignoreCase = true) ||
-            catalog.extras.any { it.equals(key, ignoreCase = true) }
+            catalog?.extras?.any { it.equals(key, ignoreCase = true) } == true
 
     private fun StremioMetaPreview.toBrowseItem(
         catalogType: StremioContentType,
         addonId: String,
     ): CollectionBrowseItem? {
+
         val kind = when (type) {
             StremioContentType.MOVIE -> TitleKind.MOVIE
             StremioContentType.SERIES, StremioContentType.TV -> TitleKind.SERIES
@@ -166,7 +194,7 @@ class AddonCollectionRowSource(
                 else -> TitleKind.MOVIE
             }
 
-            StremioContentType.UNKNOWN -> return null
+            StremioContentType.ALL, StremioContentType.UNKNOWN -> return null
         }
         val typed = ExternalIdExtractor.extract(id)
         val tmdbId = typed.firstOrNull { it.authority == ExternalIdExtractor.AUTHORITY_TMDB }?.value?.toLongOrNull()
@@ -189,8 +217,11 @@ class AddonCollectionRowSource(
         )
     }
 
-    private fun rowOwnerKey(definition: CollectionSourceDefinition, catalog: DeclaredCatalog): String =
-        "collection-addon:${definition.addonId ?: "*"}:${catalog.type.wire}:${catalog.id}"
+    private fun rowOwnerKey(
+        definition: CollectionSourceDefinition,
+        type: StremioContentType,
+        catalogId: String,
+    ): String = "collection-addon:${definition.addonId ?: "*"}:${type.wire}:$catalogId"
 
     private fun yearOf(releaseInfo: String?): Int? =
         releaseInfo?.trim()?.take(4)?.toIntOrNull()

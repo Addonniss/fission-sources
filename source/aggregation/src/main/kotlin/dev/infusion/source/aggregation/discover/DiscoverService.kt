@@ -453,7 +453,7 @@ class DiscoverService(
         StremioContentType.SERIES, StremioContentType.TV -> TitleKind.SERIES
         StremioContentType.CHANNEL -> TitleKind.CLIP
 
-        StremioContentType.UNKNOWN -> null
+        StremioContentType.ALL, StremioContentType.UNKNOWN -> null
     }
 
     companion object {

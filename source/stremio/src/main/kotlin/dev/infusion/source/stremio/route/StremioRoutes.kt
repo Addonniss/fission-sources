@@ -38,12 +38,12 @@ class StremioRoutes private constructor(
     }
 
     fun meta(type: StremioContentType, id: String): CanonicalUrl {
-        rejectUnknownType(type)
+        rejectNonContentType(type)
         return buildPath("${resourcePath("meta", type, id)}.json")
     }
 
     fun stream(type: StremioContentType, videoId: String): CanonicalUrl {
-        rejectUnknownType(type)
+        rejectNonContentType(type)
         return buildPath("${resourcePath("stream", type, videoId)}.json")
     }
 
@@ -52,7 +52,7 @@ class StremioRoutes private constructor(
         id: String,
         extras: List<Pair<String, String>> = emptyList(),
     ): CanonicalUrl {
-        rejectUnknownType(type)
+        rejectNonContentType(type)
         val base = resourcePath("subtitles", type, id)
         if (extras.isEmpty()) return buildPath("$base.json")
         val extraComponent = encodeExtras(extras, SUBTITLE_EXTRA_KEYS)
@@ -60,7 +60,13 @@ class StremioRoutes private constructor(
     }
 
     private fun rejectUnknownType(type: StremioContentType) {
-        if (type == StremioContentType.UNKNOWN) {
+        if (!type.routableAsCatalog) {
+            throw WireException(DiagnosticReason.SCHEMA_INVALID, "unsupported content type")
+        }
+    }
+
+    private fun rejectNonContentType(type: StremioContentType) {
+        if (!type.isDeclaredContentType) {
             throw WireException(DiagnosticReason.SCHEMA_INVALID, "unsupported content type")
         }
     }
