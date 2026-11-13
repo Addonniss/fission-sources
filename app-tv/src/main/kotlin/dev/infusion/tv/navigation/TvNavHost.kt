@@ -1452,6 +1452,8 @@ private fun TvNavContent(
                 onExit = { activity?.finish() },
                 setup = setup,
 
+                updateController = container.updateController,
+
                 jellyfinConnection = jellyfinConnection,
                 jellyfinConnectedUser = connectedUser,
                 acquisition = acquisition,

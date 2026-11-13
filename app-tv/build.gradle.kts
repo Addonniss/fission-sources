@@ -438,6 +438,186 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     dependsOn(generateMdblistCredential)
 }
 
+val aboutReleaseNotesSourceDir = layout.buildDirectory.dir("generated/aboutReleaseNotes/kotlin")
+val aboutReleaseNotesDirectory = rootProject.layout.projectDirectory.dir("docs/release/notes")
+
+val generateAboutReleaseNotes = tasks.register("generateAboutReleaseNotes") {
+    group = "build"
+    description = "Generates Settings → About's bundled release-notes history from docs/release/notes."
+    val notesDirectory = aboutReleaseNotesDirectory
+    val outputDirectory = aboutReleaseNotesSourceDir
+    val buildVersionCode = infusionVersionCode
+    inputs.dir(notesDirectory).withPropertyName("releaseNotes")
+    inputs.property("buildVersionCode", buildVersionCode)
+    outputs.dir(outputDirectory)
+    doLast {
+        val notes = notesDirectory.asFile.listFiles().orEmpty()
+            .filter { it.isFile }
+            .mapNotNull { aboutReleaseNoteFrom(it, buildVersionCode) }
+            .sortedByDescending { it.versionCode }
+
+        val source = StringBuilder()
+        source.append("package dev.infusion.tv.ui.screens\n\n")
+        source.append(
+            "/*\n" +
+                " * GENERATED FILE — do not edit, do not commit.\n" +
+                " *\n" +
+                " * Settings → About's release-notes history, extracted at build time from the\n" +
+                " * published notes in docs/release/notes/. The notes are the ONE source: the same\n" +
+                " * file is the GitHub release body, the site's per-version page and the CHANGELOG\n" +
+                " * entry, so a new published release appears here on its own (see\n" +
+                " * docs/release/RELEASE_RUNBOOK.md, \"About's bundled release-notes history\").\n" +
+                " *\n" +
+                " * Only the user-facing material is emitted: the note's H1 and its What's new /\n" +
+                " * Fixes bullets. No digest, asset name, path, task id or build fact is here.\n" +
+                " */\n",
+        )
+        source.append("internal val generatedAboutReleaseNotes: List<AboutReleaseNote> = listOf(\n")
+        notes.forEach { note ->
+            source.append("    AboutReleaseNote(\n")
+            source.append("        versionName = ").append(kotlinStringLiteral(note.versionName)).append(",\n")
+            source.append("        title = ").append(kotlinStringLiteral(note.title)).append(",\n")
+            source.append("        whatsNew = listOf(\n")
+            note.whatsNew.forEach { line ->
+                source.append("            ").append(kotlinStringLiteral(line)).append(",\n")
+            }
+            source.append("        ),\n")
+            source.append("        fixes = listOf(\n")
+            note.fixes.forEach { line ->
+                source.append("            ").append(kotlinStringLiteral(line)).append(",\n")
+            }
+            source.append("        ),\n")
+            source.append("    ),\n")
+        }
+        source.append(")\n")
+
+        val target = outputDirectory.get().asFile
+            .resolve("dev/infusion/tv/ui/screens/GeneratedAboutReleaseNotes.kt")
+        target.parentFile.mkdirs()
+        target.writeText(source.toString())
+        logger.lifecycle(
+            "About release notes: ${notes.size} published release(s) bundled (" +
+                notes.joinToString(", ") { it.versionName } + ")",
+        )
+    }
+}
+
+android.sourceSets.getByName("main").java.srcDir(aboutReleaseNotesSourceDir)
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(generateAboutReleaseNotes)
+}
+
+data class AboutNoteBullets(
+    val versionCode: Int,
+    val versionName: String,
+    val title: String,
+    val whatsNew: List<String>,
+    val fixes: List<String>,
+)
+
+private val aboutNoteDraftMarker = Regex("""(?m)^\s*>\s*\*\*DRAFT\b""")
+
+private val aboutNoteFileName = Regex("""^(\d+)\.(\d+)\.(\d+)\.md$""")
+
+private val aboutNoteInlineLink = Regex("""\[([^\]]+)\]\([^)]*\)""")
+
+private val aboutNoteWhitespace = Regex("""\s+""")
+
+private fun aboutReleaseNoteFrom(file: File, buildVersionCode: Int): AboutNoteBullets? {
+    val match = aboutNoteFileName.matchEntire(file.name) ?: return null
+    val versionName = "${match.groupValues[1]}.${match.groupValues[2]}.${match.groupValues[3]}"
+    val versionCode = match.groupValues[1].toInt() * 10_000 +
+        match.groupValues[2].toInt() * 100 +
+        match.groupValues[3].toInt()
+
+    if (versionCode > buildVersionCode) return null
+
+    val text = file.readText()
+    if (aboutNoteDraftMarker.containsMatchIn(text)) return null
+
+    val title = text.lineSequence()
+        .firstOrNull { it.startsWith("# ") }
+        ?.removePrefix("# ")
+        ?.let { aboutNotePlainText(it) }
+        ?.takeIf { it.startsWith("$versionName ") }
+        ?: return null
+
+    val whatsNew = mutableListOf<String>()
+    val fixes = mutableListOf<String>()
+    var section: MutableList<String>? = null
+    var bullet: StringBuilder? = null
+
+    fun flushBullet() {
+        val line = bullet?.let { aboutNotePlainText(it.toString()) }?.takeIf { it.isNotEmpty() }
+        if (line != null) section?.add(line)
+        bullet = null
+    }
+
+    text.lineSequence().forEach { raw ->
+        val line = raw.trimEnd()
+        when {
+            line.startsWith("## ") -> {
+                flushBullet()
+                section = when (aboutNotePlainText(line.removePrefix("## "))) {
+                    "What's new" -> whatsNew
+                    "Fixes" -> fixes
+                    else -> {
+
+                        null
+                    }
+                }
+            }
+            section == null -> Unit
+            line.isBlank() -> flushBullet()
+            line.startsWith("- ") -> {
+                flushBullet()
+                bullet = StringBuilder(line.removePrefix("- "))
+            }
+
+            raw.startsWith("  ") || raw.startsWith("\t") -> {
+                bullet?.append(' ')?.append(line.trim())
+            }
+            else -> flushBullet()
+        }
+    }
+    flushBullet()
+
+    if (whatsNew.isEmpty()) return null
+    return AboutNoteBullets(
+        versionCode = versionCode,
+        versionName = versionName,
+        title = title,
+        whatsNew = whatsNew,
+        fixes = fixes,
+    )
+}
+
+private val aboutNoteInlineCode = Regex("""`([^`]+)`""")
+
+private fun aboutNotePlainText(raw: String): String = raw
+    .replace(aboutNoteInlineLink) { it.groupValues[1] }
+    .replace(aboutNoteInlineCode) { "“${it.groupValues[1]}”" }
+    .replace("**", "")
+    .replace("`", "")
+    .replace(aboutNoteWhitespace, " ")
+    .trim()
+
+private fun kotlinStringLiteral(value: String): String {
+    val escaped = StringBuilder("\"")
+    value.forEach { character ->
+        when (character) {
+            '\\' -> escaped.append("\\\\")
+            '"' -> escaped.append("\\\"")
+            '$' -> escaped.append("\\$")
+            '\n' -> escaped.append("\\n")
+            '\r' -> escaped.append("\\r")
+            '\t' -> escaped.append("\\t")
+            else -> escaped.append(character)
+        }
+    }
+    return escaped.append('"').toString()
+}
+
 tasks.register("verifyMainApkPackaging") {
     group = "verification"
     description = "Fails if the main debug/release APK omits required pure-JVM Stremio class definitions (test APK is not the provider)."

@@ -60,6 +60,13 @@ class UpdateController(
         }
     }
 
+    suspend fun checkNow(): UpdateCheckResult {
+        checked.set(true)
+        val result = checkSource.check(installedVersionCode())
+        if (result is UpdateCheckResult.Found) candidate = result.candidate
+        return result
+    }
+
     fun onUpdateConfirmed() {
         val current = candidate ?: return
         if (installJob?.isActive == true) return

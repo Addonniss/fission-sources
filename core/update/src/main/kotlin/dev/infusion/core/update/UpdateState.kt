@@ -32,6 +32,44 @@ enum class UpdateFailureKind(
     INSTALL_FAILED("The install didn't complete.", retryable = true),
 }
 
+enum class UpdateCheckNotice(
+
+    val message: String,
+) {
+
+    LATEST("You have the latest version."),
+
+    UNREACHABLE("Couldn't reach the releases. Check the connection and try again."),
+
+    SERVICE_UNAVAILABLE("The release service couldn't answer. Try again in a few minutes."),
+
+    NO_INSTALLABLE_RELEASE("No installable release was found."),
+
+    NOT_AVAILABLE("Updates can't be checked on this build."),
+}
+
+fun SilentSkipReason.toCheckNotice(): UpdateCheckNotice = when (this) {
+    SilentSkipReason.UP_TO_DATE,
+    SilentSkipReason.NOT_STRICTLY_NEWER,
+    -> UpdateCheckNotice.LATEST
+    SilentSkipReason.NO_NETWORK,
+    SilentSkipReason.POLICY_DENIED,
+    -> UpdateCheckNotice.UNREACHABLE
+    SilentSkipReason.RATE_LIMITED,
+    SilentSkipReason.API_UNAVAILABLE,
+    -> UpdateCheckNotice.SERVICE_UNAVAILABLE
+    SilentSkipReason.MALFORMED_RESPONSE,
+    SilentSkipReason.DRAFT,
+    SilentSkipReason.NOT_ALPHA_CHANNEL,
+    SilentSkipReason.BURNED_REHEARSAL,
+    SilentSkipReason.MALFORMED_VERSION,
+    SilentSkipReason.ASSET_INCONSISTENT,
+    SilentSkipReason.NO_TV_ASSET,
+    SilentSkipReason.ASSET_AMBIGUOUS,
+    SilentSkipReason.DIGEST_UNAVAILABLE,
+    -> UpdateCheckNotice.NO_INSTALLABLE_RELEASE
+}
+
 enum class SilentSkipReason {
     NO_NETWORK,
     POLICY_DENIED,

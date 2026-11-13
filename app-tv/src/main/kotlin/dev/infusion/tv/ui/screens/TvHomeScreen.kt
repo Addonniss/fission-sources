@@ -676,11 +676,13 @@ fun TvHomeScreen(
             )
         }
     }
-    val entryKey = when {
-        spotlightOffEntryKey != null -> spotlightOffEntryKey
-        spotlightEnabled && featured != null -> HomeHeroSpotlightFocusKey
-        else -> null
-    }
+
+    val entryKey = homeContentEntryKey(
+        spotlightPreferenceRead = spotlightPreferenceRead,
+        spotlightEnabled = spotlightEnabled,
+        spotlightOffEntryKey = spotlightOffEntryKey,
+        spotlightPresent = featured != null,
+    )
 
     val spotlightDrawSettledWithoutSet = !spotlightPresentation.pending &&
         !spotlightPresentation.drawReady &&
@@ -1491,6 +1493,26 @@ internal fun homeEntryKey(
     focusRestoreKey in restorableTileKeys -> focusRestoreKey
     rowsLoading -> null
     else -> entryKey
+}
+
+internal fun homeContentEntryKey(
+
+    spotlightPreferenceRead: Boolean,
+
+    spotlightEnabled: Boolean,
+
+    spotlightOffEntryKey: String?,
+
+    spotlightPresent: Boolean,
+): String? = when {
+
+    !spotlightPreferenceRead -> null
+
+    spotlightOffEntryKey != null -> spotlightOffEntryKey
+
+    spotlightEnabled && spotlightPresent -> HomeHeroSpotlightFocusKey
+
+    else -> null
 }
 
 internal fun homeSpotlightOffEntryKey(

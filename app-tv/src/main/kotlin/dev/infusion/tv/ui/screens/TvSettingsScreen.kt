@@ -1146,6 +1146,8 @@ fun TvSettingsScreen(
     onOpenPairing: () -> Unit = {},
 
     installedVersionName: String? = null,
+
+    updateController: dev.infusion.tv.updater.UpdateController? = null,
     homeCustomization: HomeCustomizationStateHolder? = null,
 
     widgetBuilder: WidgetBuilderStateHolder? = null,
@@ -1750,6 +1752,7 @@ fun TvSettingsScreen(
                                     rememberedKey = rememberedKey,
                                     onFocusRequested = onFocusRequested,
                                     installedVersionName = installedVersionName,
+                                    updateController = updateController,
                                 )
                             },
                         ),
