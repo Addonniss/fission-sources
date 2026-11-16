@@ -427,6 +427,8 @@ class TrackingScrobbleConnector(
             WatchEvent.Kind.EXPLICIT_RESET,
             WatchEvent.Kind.HANDOFF,
 
+            WatchEvent.Kind.UNWATCHED,
+
             WatchEvent.Kind.RESUME_RESET,
             -> null
         }

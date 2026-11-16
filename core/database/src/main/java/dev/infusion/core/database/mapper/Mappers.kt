@@ -139,6 +139,8 @@ object WatchStateMapper {
             lastEventId = state.lastEventId?.value?.toString(),
             lastMeaningfulAtMs = state.lastMeaningfulAt?.toEpochMilli(),
             activeSessionId = state.activeSessionId?.value?.toString(),
+
+            watchedAtMs = state.watchedAt?.toEpochMilli(),
             anchorSourceId = anchor?.nativeItemId?.sourceId?.value?.toString(),
             anchorNativeId = anchor?.nativeItemId?.nativeId,
             anchorFamilyId = anchor?.familyId?.digest,
@@ -169,6 +171,7 @@ object WatchStateMapper {
             lastEventId = entity.lastEventId?.let { EventId.fromString(it) },
             lastMeaningfulAt = entity.lastMeaningfulAtMs?.let { Instant.ofEpochMilli(it) },
             activeSessionId = entity.activeSessionId?.let { SessionId.fromString(it) },
+            watchedAt = entity.watchedAtMs?.let { Instant.ofEpochMilli(it) },
             anchor = anchor,
             conflicts = ConflictJson.decode(entity.conflictsJson),
             connectorStates = ConnectorObservationJson.decode(entity.connectorStatesJson),

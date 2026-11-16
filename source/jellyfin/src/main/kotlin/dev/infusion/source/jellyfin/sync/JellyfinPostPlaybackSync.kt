@@ -19,6 +19,7 @@ class JellyfinPostPlaybackSync(
         durationMs: Long?,
         completed: Boolean,
         occurredAt: Instant,
+        played: Boolean? = null,
     ): Outcome {
 
         val isEpisode = watchKey.isEpisode
@@ -42,8 +43,20 @@ class JellyfinPostPlaybackSync(
 
         if (sessionProvider()?.userId != requestingUserId) return Outcome.Skipped(Reason.SESSION_CHANGED)
 
+        val statedPlayed: Boolean? = if (completed) true else played
+
+        if (statedPlayed != null) {
+            if (item.positionMs == 0L && item.played == statedPlayed) {
+                return Outcome.Delivered(requests = readRequests(watchKey))
+            }
+        } else if (item.positionMs == positionMs) {
+            return Outcome.Delivered(requests = readRequests(watchKey))
+        }
+
         val serverAt = item.lastPlayedAt
-        if (serverAt != null && serverAt.isAfter(occurredAt)) {
+        if (serverAt != null && serverAt.isAfter(occurredAt) &&
+            !isOwnTerminalEcho(statedPlayed, item, positionMs)
+        ) {
             return Outcome.Skipped(Reason.NEWER_SERVER_ACTIVITY)
         }
 
@@ -51,14 +64,8 @@ class JellyfinPostPlaybackSync(
             return Outcome.Skipped(Reason.EDITION_MISMATCH)
         }
 
-        if (completed) {
-            if (item.positionMs == 0L && item.played) return Outcome.Delivered(requests = readRequests(watchKey))
-        } else if (item.positionMs == positionMs) {
-            return Outcome.Delivered(requests = readRequests(watchKey))
-        }
-
-        val result = if (completed) {
-            catalog.writePostPlaybackState(nativeId = item.nativeId, positionMs = 0L, played = true)
+        val result = if (statedPlayed != null) {
+            catalog.writePostPlaybackState(nativeId = item.nativeId, positionMs = 0L, played = statedPlayed)
         } else {
             catalog.writePostPlaybackState(nativeId = item.nativeId, positionMs = positionMs, played = null)
         }
@@ -71,6 +78,13 @@ class JellyfinPostPlaybackSync(
     fun estimateRequests(): Int = 4
 
     private fun readRequests(watchKey: WatchKey): Int = if (watchKey.isEpisode) 3 else 1
+
+    private fun isOwnTerminalEcho(
+        statedPlayed: Boolean?,
+        item: PostPlaybackItemState,
+        positionMs: Long,
+    ): Boolean =
+        statedPlayed == true && positionMs > 0L && item.positionMs == positionMs && !item.played
 
     private fun runtimeCompatible(localDurationMs: Long?, serverRuntimeMs: Long?): Boolean {
 

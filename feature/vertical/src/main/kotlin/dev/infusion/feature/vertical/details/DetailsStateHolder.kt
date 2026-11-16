@@ -158,21 +158,25 @@ class DetailsStateHolder(
         }
     }
 
-    private fun hintState(): DetailsUiState = DetailsUiState(
-        titleId = titleId,
-        title = hint?.preview?.displayTitle,
-        kindLabel = hint?.preview?.kind?.name?.lowercase(),
-        year = hint?.preview?.year,
-        subtitle = hint?.preview?.subtitle,
-        watched = resumeHint.value?.let { WatchedDisplay.InProgress(it) } ?: WatchedDisplay.Unseen,
-        resumePositionMs = resumeHint.value,
-        phase = DetailsPhase.Loading,
-        primaryAction = detailsPrimaryAction(
-            resumable = resumeHint.value != null,
-            identityEstablished = hint != null,
-        ),
-        initialFocusKey = if (hint == null) "back" else "primary",
-    )
+    private fun hintState(): DetailsUiState {
+
+        val facts = DetailsWatchFacts.hint(resumeHint.value)
+        return DetailsUiState(
+            titleId = titleId,
+            title = hint?.preview?.displayTitle,
+            kindLabel = hint?.preview?.kind?.name?.lowercase(),
+            year = hint?.preview?.year,
+            subtitle = hint?.preview?.subtitle,
+            watched = facts.watched,
+            resumePositionMs = facts.attemptResumePositionMs,
+            phase = DetailsPhase.Loading,
+            primaryAction = detailsPrimaryAction(
+                resumable = facts.resumable,
+                identityEstablished = hint != null,
+            ),
+            initialFocusKey = if (hint == null) "back" else "primary",
+        )
+    }
 
     private fun buildState(
         details: TitleDetails?,
@@ -184,19 +188,13 @@ class DetailsStateHolder(
 
             val identityKnown = hint != null
 
-            val localWatched: WatchedDisplay = when (watchState?.status) {
-                WatchStatus.IN_PROGRESS -> WatchedDisplay.InProgress(watchState.positionMs, watchState.completionFraction)
-                WatchStatus.COMPLETED -> WatchedDisplay.Completed
-                else -> WatchedDisplay.Unseen
-            }
-            val watched: WatchedDisplay = effectiveWatched(
+            val facts = detailsWatchFacts(
+                localState = watchState,
                 serverResume = serverResume,
-                local = localWatched,
-                localStatePresent = watchState != null,
                 hintResumeMs = hintResumeMs,
-                localObservedAt = watchState?.lastMeaningfulAt,
             )
-            val resumePositionMs = (watched as? WatchedDisplay.InProgress)?.positionMs?.takeIf { it > 0 }
+            val watched: WatchedDisplay = facts.watched
+            val resumePositionMs = facts.attemptResumePositionMs
             return DetailsUiState(
                 titleId = titleId,
 
@@ -208,7 +206,7 @@ class DetailsStateHolder(
                 resumePositionMs = resumePositionMs,
 
                 primaryAction = detailsPrimaryAction(
-                    resumable = watched is WatchedDisplay.InProgress && resumePositionMs != null,
+                    resumable = facts.resumable,
                     identityEstablished = identityKnown,
                 ),
                 unplayableReason = if (identityKnown) {
@@ -223,23 +221,17 @@ class DetailsStateHolder(
         }
         val hasAvailability = details.availability.isNotEmpty()
         val edition = details.editions.firstOrNull()
-        val localWatched: WatchedDisplay = when (watchState?.status) {
-            WatchStatus.IN_PROGRESS -> WatchedDisplay.InProgress(watchState.positionMs, watchState.completionFraction)
-            WatchStatus.COMPLETED -> WatchedDisplay.Completed
-            else -> WatchedDisplay.Unseen
-        }
 
-        val watched: WatchedDisplay = effectiveWatched(
+        val facts = detailsWatchFacts(
+            localState = watchState,
             serverResume = serverResume,
-            local = localWatched,
-            localStatePresent = watchState != null,
             hintResumeMs = hintResumeMs,
-            localObservedAt = watchState?.lastMeaningfulAt,
         )
-        val resumePositionMs = (watched as? WatchedDisplay.InProgress)?.positionMs?.takeIf { it > 0 }
+        val watched: WatchedDisplay = facts.watched
+        val resumePositionMs = facts.attemptResumePositionMs
 
         val primaryAction = detailsPrimaryAction(
-            resumable = watched is WatchedDisplay.InProgress && resumePositionMs != null,
+            resumable = facts.resumable,
             identityEstablished = true,
         )
         return DetailsUiState(

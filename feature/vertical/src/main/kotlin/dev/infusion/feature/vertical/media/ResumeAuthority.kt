@@ -1,5 +1,6 @@
 package dev.infusion.feature.vertical.media
 
+import dev.infusion.core.playback.api.ServerResumePosition
 import java.time.Instant
 
 object ResumeAuthority {
@@ -28,3 +29,10 @@ data class LocalResumeObservation(
 
     val observedAt: Instant?,
 )
+
+suspend fun canonicalResumeClaim(
+    candidateBelongsToAnsweringSource: Boolean,
+    candidateClaim: suspend () -> ServerResumePosition?,
+    canonicalUnitClaim: suspend () -> ServerResumePosition?,
+): ServerResumePosition? =
+    if (candidateBelongsToAnsweringSource) candidateClaim() else canonicalUnitClaim()

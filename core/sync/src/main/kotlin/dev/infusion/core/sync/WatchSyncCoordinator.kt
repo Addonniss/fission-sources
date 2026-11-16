@@ -57,21 +57,33 @@ class WatchSyncCoordinator(
         durationMs: Long? = null,
         cursor: String? = null,
     ): WatchState {
-        require(kind == WatchEvent.Kind.PROGRESS || kind == WatchEvent.Kind.COMPLETED) {
-            "connectors may only import PROGRESS or COMPLETED observations"
-        }
+        require(
+            kind == WatchEvent.Kind.PROGRESS ||
+                kind == WatchEvent.Kind.COMPLETED ||
+                kind == WatchEvent.Kind.UNWATCHED,
+        ) { "connectors may only import PROGRESS, COMPLETED or UNWATCHED observations" }
         require(connectorId.isNotBlank()) { "connectorId must not be blank" }
-        val event = WatchEvent.Imported(
-            eventId = EventId.random(),
+
+        val alreadyAppended = importedFactAlreadyHeld(
+            connectorId = connectorId,
             watchKey = watchKey,
             kind = kind,
-            occurredAt = now(),
-            connectorId = connectorId,
             observedAt = observedAt,
             positionMs = positionMs,
-            durationMs = durationMs,
         )
-        ledger.append(event)
+        if (!alreadyAppended) {
+            val event = WatchEvent.Imported(
+                eventId = EventId.random(),
+                watchKey = watchKey,
+                kind = kind,
+                occurredAt = now(),
+                connectorId = connectorId,
+                observedAt = observedAt,
+                positionMs = positionMs,
+                durationMs = durationMs,
+            )
+            ledger.append(event)
+        }
         val state = materialize(watchKey)
         checkpointStore.save(
             ConnectorCheckpoint(
@@ -94,6 +106,21 @@ class WatchSyncCoordinator(
                 event.connectorId == connectorId &&
                 event.kind == WatchEvent.Kind.COMPLETED &&
                 event.observedAt == observedAt
+        }
+
+    fun importedFactAlreadyHeld(
+        connectorId: String,
+        watchKey: WatchKey,
+        kind: WatchEvent.Kind,
+        observedAt: Instant,
+        positionMs: Long?,
+    ): Boolean =
+        ledger.eventsFor(watchKey).any { event ->
+            event is WatchEvent.Imported &&
+                event.connectorId == connectorId &&
+                event.kind == kind &&
+                event.observedAt == observedAt &&
+                (kind == WatchEvent.Kind.COMPLETED || event.positionMs == positionMs)
         }
 
     fun materialize(key: WatchKey): WatchState {

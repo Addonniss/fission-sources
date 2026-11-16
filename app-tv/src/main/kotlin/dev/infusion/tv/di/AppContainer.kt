@@ -859,6 +859,10 @@ class AppContainer(
             if (jellyfinServerProgressOwnerDelegate.isInitialized()) {
                 jellyfinServerProgressOwner.invalidate()
             }
+
+            if (jellyfinInboundWatchSyncDelegate.isInitialized()) {
+                jellyfinInboundWatchSync.clear()
+            }
         }
 
     private val _jellyfinSourceId = MutableStateFlow<String?>(null)
@@ -899,6 +903,43 @@ class AppContainer(
 
     private val jellyfinServerProgressOwner: dev.infusion.tv.ui.presentation.JellyfinServerProgressOwner
         get() = jellyfinServerProgressOwnerDelegate.value
+
+    private val jellyfinInboundWatchSyncDelegate:
+        Lazy<dev.infusion.source.jellyfin.sync.JellyfinInboundWatchSync> = lazy {
+        dev.infusion.source.jellyfin.sync.JellyfinInboundWatchSync(
+            scope = appScope,
+
+            enabled = { jellyfinSource?.currentUserId() != null },
+            readServerState = { watchKey -> jellyfinSource?.canonicalUnitServerState(watchKey) },
+
+            readLocalState = { watchKey -> watchStateStore().current(watchKey) },
+
+            watchedStatementInFlight = { watchKey -> jellyfinSettlementInFlight(watchKey) },
+            coordinator = coordinator,
+        )
+    }
+
+    private fun jellyfinSettlementInFlight(
+        watchKey: dev.infusion.core.model.watch.WatchKey,
+    ): Boolean = watchOutbox.pending(dev.infusion.source.jellyfin.sync.JellyfinInboundWatchSync.CONNECTOR_ID)
+        .any { entry ->
+            when (val payload = entry.payload) {
+                is dev.infusion.core.model.sync.OutboxPayload.PositionUpdate ->
+                    payload.watchKey == watchKey && (payload.completed || payload.played != null)
+
+                is dev.infusion.core.model.sync.OutboxPayload.WatchAction ->
+                    payload.watchKey == watchKey && (
+                        payload.kind == dev.infusion.core.model.watch.WatchEvent.Kind.COMPLETED ||
+                            payload.kind == dev.infusion.core.model.watch.WatchEvent.Kind.EXPLICIT_WATCHED ||
+                            payload.kind == dev.infusion.core.model.watch.WatchEvent.Kind.EXPLICIT_RESET
+                        )
+
+                else -> false
+            }
+        }
+
+    private val jellyfinInboundWatchSync: dev.infusion.source.jellyfin.sync.JellyfinInboundWatchSync
+        get() = jellyfinInboundWatchSyncDelegate.value
 
     var catalog: dev.infusion.core.domain.catalog.CatalogPort = NoSourceCatalogPort()
         private set
@@ -1524,6 +1565,7 @@ class AppContainer(
     val watchedStateDemand: dev.infusion.feature.vertical.details.WatchedStateDemand by lazy {
         dev.infusion.feature.vertical.details.WatchedStateDemand { watchKey ->
             trackingGraphs.demandWatchedState(watchKey)
+            jellyfinInboundWatchSync.demand(watchKey)
         }
     }
 
@@ -2862,11 +2904,12 @@ class AppContainer(
 
             serverResumePosition = jellyfinSource?.let { graph ->
                 { playable ->
-                    if (playable.sourceId == graph.sourceId) {
-                        graph.currentResumePositionFor(playable)
-                    } else {
-                        null
-                    }
+
+                    dev.infusion.feature.vertical.media.canonicalResumeClaim(
+                        candidateBelongsToAnsweringSource = playable.sourceId == graph.sourceId,
+                        candidateClaim = { graph.currentResumePositionFor(playable) },
+                        canonicalUnitClaim = { graph.canonicalUnitResumePosition(watchKey) },
+                    )
                 }
             },
 

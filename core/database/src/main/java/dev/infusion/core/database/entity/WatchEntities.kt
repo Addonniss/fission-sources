@@ -85,6 +85,8 @@ data class WatchStateEntity(
     @ColumnInfo(name = "last_meaningful_at_ms") val lastMeaningfulAtMs: Long?,
     @ColumnInfo(name = "active_session_id") val activeSessionId: String?,
 
+    @ColumnInfo(name = "watched_at_ms") val watchedAtMs: Long? = null,
+
     @ColumnInfo(name = "anchor_source_id") val anchorSourceId: String?,
     @ColumnInfo(name = "anchor_native_id") val anchorNativeId: String?,
     @ColumnInfo(name = "anchor_family_id") val anchorFamilyId: String?,

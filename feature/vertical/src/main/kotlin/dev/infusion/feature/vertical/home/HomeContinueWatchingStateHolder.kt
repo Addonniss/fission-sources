@@ -111,6 +111,8 @@ class HomeContinueWatchingStateHolder(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val _localStates = MutableStateFlow<List<WatchState>>(emptyList())
+
+    private val _finishedUnits = MutableStateFlow<Map<String, WatchState>>(emptyMap())
     private val _cwInfo = MutableStateFlow<Map<WatchKey, CwCatalogInfo>>(emptyMap())
     private val _provenance = MutableStateFlow<Map<WatchKey, String?>>(emptyMap())
     private val _artwork = MutableStateFlow<Map<WatchKey, MediaArtworkRef>>(emptyMap())
@@ -159,15 +161,25 @@ class HomeContinueWatchingStateHolder(
 
     private suspend fun collectLedger() = coroutineScope {
         val work = this
-        localContinueWatching.observe().collect { states ->
+
+        localContinueWatching.observeProjection().collect { projection ->
             localLoaded = true
-            _localStates.value = states
+            _localStates.value = projection.inProgress
+            _finishedUnits.value = projection.finished.associateByNotNull(::localCanonicalKey)
 
             publish()
 
-            seedPresentation(states)
-            presentNewKeys(states, work)
+            seedPresentation(projection.inProgress)
+            presentNewKeys(projection.inProgress, work)
         }
+    }
+
+    private fun List<WatchState>.associateByNotNull(
+        key: (WatchState) -> String?,
+    ): Map<String, WatchState> {
+        val result = LinkedHashMap<String, WatchState>(size)
+        for (state in this) key(state)?.let { result[it] = state }
+        return result
     }
 
     fun onSurfacePresent() {
@@ -422,7 +434,11 @@ class HomeContinueWatchingStateHolder(
                 )
             }
 
+        val localInProgressKeys = _localStates.value
+            .mapNotNullTo(HashSet()) { localCanonicalKey(it) }
+        val settledUnits = _finishedUnits.value
         val jellyfinCards = dedupeServerCards(loadedItems.mapNotNull(::jellyfinCard))
+            .filterNot { card -> serverCardContradictsLocalSettlement(card, settledUnits, localInProgressKeys) }
 
         val cards = (localCards + jellyfinCards).sortedWith(unifiedContinueWatchingOrder)
 
@@ -515,6 +531,20 @@ class HomeContinueWatchingStateHolder(
             val key = (card.origin as? HomeCwOrigin.Jellyfin)?.let { jellyfinCanonicalKey(it.item) }
             key == null || seen.add(key)
         }
+    }
+
+    private fun serverCardContradictsLocalSettlement(
+        card: HomeCwCard,
+        settledUnits: Map<String, WatchState>,
+        localInProgressKeys: Set<String>,
+    ): Boolean {
+        val item = (card.origin as? HomeCwOrigin.Jellyfin)?.item ?: return false
+        val unit = jellyfinCanonicalKey(item) ?: return false
+        if (unit in localInProgressKeys) return false
+        val settled = settledUnits[unit] ?: return false
+        val serverObservedAt = parseJellyfinLastPlayedDate(item.lastPlayedDate)
+        val settledAt = settled.lastMeaningfulAt
+        return serverObservedAt == null || settledAt == null || !serverObservedAt.isAfter(settledAt)
     }
 
     private fun localCard(

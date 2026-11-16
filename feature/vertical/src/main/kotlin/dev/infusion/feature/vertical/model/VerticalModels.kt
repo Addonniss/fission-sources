@@ -157,7 +157,9 @@ data class EpisodeDetailsUiState(
     val episodeNumber: Int,
     val displayTitle: String? = null,
     val synopsis: String? = null,
+
     val watched: WatchedDisplay = WatchedDisplay.Unseen,
+
     val resumePositionMs: Long? = null,
     val primaryAction: PrimaryAction = PrimaryAction.UNPLAYABLE,
     val unplayableReason: String? = null,
@@ -208,8 +210,10 @@ data class DetailsUiState(
     val genres: List<String> = emptyList(),
 
     val rating: String? = null,
-    val resumePositionMs: Long? = null,
+
     val watched: WatchedDisplay = WatchedDisplay.Unseen,
+
+    val resumePositionMs: Long? = null,
     val primaryAction: PrimaryAction = PrimaryAction.UNPLAYABLE,
     val unplayableReason: String? = null,
 

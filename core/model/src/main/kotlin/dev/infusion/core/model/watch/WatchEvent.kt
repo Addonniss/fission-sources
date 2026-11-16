@@ -41,8 +41,10 @@ sealed class WatchEvent {
         override val durationMs: Long? = null,
     ) : WatchEvent() {
         init {
-            require(kind == Kind.PROGRESS || kind == Kind.COMPLETED) {
-                "imported observations may only carry PROGRESS or COMPLETED, was $kind"
+            require(
+                kind == Kind.PROGRESS || kind == Kind.COMPLETED || kind == Kind.UNWATCHED,
+            ) {
+                "imported observations may only carry PROGRESS, COMPLETED or UNWATCHED, was $kind"
             }
             require(connectorId.isNotBlank()) { "connectorId must not be blank" }
             validate(kind, positionMs, durationMs)
@@ -65,6 +67,8 @@ sealed class WatchEvent {
 
         RESUME_RESET,
 
+        UNWATCHED,
+
         CANCELLED,
 
         SOURCE_FAILURE,
@@ -83,6 +87,8 @@ sealed class WatchEvent {
                     require(positionMs == null || positionMs == 0L) { "EXPLICIT_RESET position must be 0" }
                 Kind.RESUME_RESET ->
                     require(positionMs == null || positionMs == 0L) { "RESUME_RESET position must be 0" }
+                Kind.UNWATCHED ->
+                    require(positionMs == null || positionMs == 0L) { "UNWATCHED carries no position" }
                 else -> Unit
             }
         }

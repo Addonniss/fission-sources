@@ -206,6 +206,11 @@ object OutboxPayloadCodec {
             p.durationMs?.toString() ?: "",
             if (p.completed) "1" else "0",
             p.occurredAt.toEpochMilli().toString(),
+            when (p.played) {
+                null -> ""
+                true -> "1"
+                false -> "0"
+            },
         ).joinToString(FLD.toString()) { escape(it) }
 
     private fun decodePositionUpdate(body: String): OutboxPayload.PositionUpdate? {
@@ -221,6 +226,13 @@ object OutboxPayloadCodec {
             else -> return null
         }
         val occurredAt = f[5].toLongOrNull()?.let { Instant.ofEpochMilli(it) } ?: return null
+
+        val played = when (val token = unescape(f.getOrNull(6) ?: "")) {
+            null, "" -> null
+            "1" -> true
+            "0" -> false
+            else -> return null
+        }
         return runCatching {
             OutboxPayload.PositionUpdate(
                 watchKey = watchKey,
@@ -228,6 +240,7 @@ object OutboxPayloadCodec {
                 durationMs = durationMs,
                 completed = completed,
                 occurredAt = occurredAt,
+                played = played,
             )
         }.getOrNull()
     }

@@ -37,3 +37,49 @@ internal fun effectiveWatched(
         else -> local
     }
 }
+
+internal data class DetailsWatchFacts(
+    val watched: WatchedDisplay,
+    val attemptResumePositionMs: Long?,
+) {
+
+    val resumable: Boolean get() = attemptResumePositionMs != null
+
+    companion object {
+
+        fun hint(resumeHintMs: Long?): DetailsWatchFacts = DetailsWatchFacts(
+            watched = resumeHintMs?.let { WatchedDisplay.InProgress(it) } ?: WatchedDisplay.Unseen,
+            attemptResumePositionMs = resumeHintMs?.takeIf { it > 0L },
+        )
+    }
+}
+
+internal fun detailsWatchFacts(
+    localState: dev.infusion.core.model.watch.WatchState?,
+    serverResume: ServerResumePosition?,
+    hintResumeMs: Long?,
+): DetailsWatchFacts {
+
+    val attempt: WatchedDisplay = when (localState?.status) {
+        dev.infusion.core.model.watch.WatchStatus.IN_PROGRESS ->
+            WatchedDisplay.InProgress(localState.positionMs, localState.completionFraction)
+
+        dev.infusion.core.model.watch.WatchStatus.COMPLETED -> WatchedDisplay.Completed
+        else -> WatchedDisplay.Unseen
+    }
+    val resolved = effectiveWatched(
+        serverResume = serverResume,
+        local = attempt,
+        localStatePresent = localState != null,
+        hintResumeMs = hintResumeMs,
+        localObservedAt = localState?.lastMeaningfulAt,
+    )
+
+    val watched = if (localState?.isWatched == true) WatchedDisplay.Completed else resolved
+    return DetailsWatchFacts(
+        watched = watched,
+        attemptResumePositionMs = (resolved as? WatchedDisplay.InProgress)
+            ?.positionMs
+            ?.takeIf { it > 0L },
+    )
+}

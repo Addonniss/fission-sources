@@ -300,8 +300,6 @@ class PlayerStateHolder(
         val nextEpisode: EpisodeIdentityUi,
     )
 
-    private var attemptThresholdCompleted: Boolean = false
-
     private val isEpisode: Boolean = watchKey.isEpisode
 
     private var activePlaybackReporter: ActivePlaybackReporter? = null
@@ -507,7 +505,6 @@ class PlayerStateHolder(
         attemptCaptioningLanguage = captioningLanguage()
 
         attemptCompletionThresholds = completionThresholds()
-        attemptThresholdCompleted = false
 
         attemptControlsAutoHide = controlsAutoHide()
 
@@ -800,8 +797,6 @@ class PlayerStateHolder(
         val current = _state.value ?: return
 
         if (current.phase in TERMINAL_PLAYER_PHASES) return
-
-        maybeRecordThresholdCompletion(positionMs, current.durationMs)
         _state.value = current.copy(
             positionMs = positionMs,
 
@@ -1178,24 +1173,8 @@ class PlayerStateHolder(
         )
     }
 
-    private fun maybeRecordThresholdCompletion(positionMs: Long, durationMs: Long?) {
-        if (attemptThresholdCompleted) return
-        val thresholds = attemptCompletionThresholds ?: return
-        if (!thresholds.qualifies(isEpisode, positionMs, durationMs)) return
-        attemptThresholdCompleted = true
-        record(
-            WatchEvent.Local(
-                eventId = EventId.random(),
-                watchKey = watchKey,
-                kind = WatchEvent.Kind.COMPLETED,
-                occurredAt = now(),
-                sessionId = watchSessionId,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                anchor = activeResumeAnchor(positionMs),
-            ),
-        )
-    }
+    private fun closureCompletesAttempt(positionMs: Long, durationMs: Long?): Boolean =
+        attemptCompletionThresholds?.qualifies(isEpisode, positionMs, durationMs) == true
 
     private fun handleEnded() {
         val current = _state.value ?: return
@@ -1219,7 +1198,12 @@ class PlayerStateHolder(
         terminalStopPositionMs = current.positionMs
         terminalStopDurationMs = current.durationMs
         pendingTerminalEvent = event
-        record(event)
+
+        PlayerForensicsLog.event(
+            "closure-classification",
+            "kind=COMPLETED natural-end positionMs=${current.positionMs} durationMs=${current.durationMs ?: -1L}",
+        )
+        recordTerminal(event)
 
         runCatching { onAttemptTerminal() }
 
@@ -1249,21 +1233,30 @@ class PlayerStateHolder(
         cancelOverlayTimeout()
 
         endSegmentLookup()
+
+        val finalPositionMs = current.positionMs
+        val finalDurationMs = current.durationMs
+        val completed = closureCompletesAttempt(finalPositionMs, finalDurationMs)
         val event = WatchEvent.Local(
             eventId = EventId.random(),
             watchKey = watchKey,
-            kind = WatchEvent.Kind.CANCELLED,
+            kind = if (completed) WatchEvent.Kind.COMPLETED else WatchEvent.Kind.CANCELLED,
             occurredAt = now(),
             sessionId = watchSessionId,
-            positionMs = current.positionMs,
-            durationMs = current.durationMs,
-            anchor = activeResumeAnchor(current.positionMs),
+            positionMs = finalPositionMs,
+            durationMs = finalDurationMs,
+            anchor = activeResumeAnchor(finalPositionMs),
+        )
+        PlayerForensicsLog.event(
+            "closure-classification",
+            "kind=${event.kind} positionMs=$finalPositionMs durationMs=${finalDurationMs ?: -1L} " +
+                "threshold=${attemptCompletionThresholds?.forKind(isEpisode)?.percent ?: -1} episode=$isEpisode",
         )
 
         terminalStopPositionMs = current.positionMs
         terminalStopDurationMs = current.durationMs
         pendingTerminalEvent = event
-        record(event)
+        recordTerminal(event)
 
         runCatching { onAttemptTerminal() }
 
@@ -1277,8 +1270,19 @@ class PlayerStateHolder(
     }
 
     private fun record(event: WatchEvent.Local) {
-        scope.launch(writeDispatcher) {
-            coordinator.recordLocal(event)
+        scope.launch(writeDispatcher) { writeWatchEvent(event) }
+    }
+
+    private fun recordTerminal(event: WatchEvent.Local) {
+        terminalStopScope.launch { writeWatchEvent(event) }
+    }
+
+    private suspend fun writeWatchEvent(event: WatchEvent.Local) {
+        runCatching { coordinator.recordLocal(event) }.onFailure { failure ->
+            PlayerForensicsLog.event(
+                "watch-record-failed",
+                "kind=${event.kind} error=${failure::class.simpleName ?: "unknown"}",
+            )
         }
     }
 
@@ -2141,8 +2145,8 @@ class PlayerStateHolder(
         if (sid != null) {
             if (terminal != null) {
 
-                scope.launch(writeDispatcher) {
-                    coordinator.recordLocal(terminal)
+                terminalStopScope.launch {
+                    writeWatchEvent(terminal)
                     sourceSessionUnbinder(sid)
                 }
             } else {

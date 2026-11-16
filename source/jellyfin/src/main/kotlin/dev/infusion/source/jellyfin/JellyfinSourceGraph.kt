@@ -173,6 +173,8 @@ class JellyfinSourceGraph(
             sessionProvider = { source.session() },
         ),
         videoPlaybackActive = videoPlaybackActive,
+
+        drainOnSettlement = true,
     )
 
     fun activeReporterFor(candidate: dev.infusion.core.model.PlayableCandidate, playbackScope: CoroutineScope): ActivePlaybackReporter? =
@@ -218,6 +220,33 @@ class JellyfinSourceGraph(
         seasonNumber: Int,
     ): Map<Pair<Int, Int>, dev.infusion.core.playback.api.ServerResumePosition> =
         catalog.episodeResumePositionsForSeason(seriesTitleId, seasonNumber)
+
+    suspend fun canonicalUnitResumePosition(
+        watchKey: dev.infusion.core.model.watch.WatchKey,
+    ): dev.infusion.core.playback.api.ServerResumePosition? {
+        if (!watchKey.isEpisode) {
+            val titleId = watchKey.titleId ?: return null
+            return catalog.currentResumePosition(titleId)
+        }
+        val seriesId = watchKey.seriesId ?: return null
+        val season = watchKey.seasonNumber ?: return null
+        val episode = watchKey.episodeNumber ?: return null
+        return catalog.episodeResumePositionsForSeason(seriesId, season)[season to episode]
+    }
+
+    suspend fun canonicalUnitServerState(
+        watchKey: dev.infusion.core.model.watch.WatchKey,
+    ): dev.infusion.source.jellyfin.catalog.PostPlaybackItemState? {
+        if (watchKey.isEpisode) {
+            val seriesId = watchKey.seriesId ?: return null
+            val season = watchKey.seasonNumber ?: return null
+            val episode = watchKey.episodeNumber ?: return null
+            return catalog.postPlaybackEpisodeState(seriesId, season, episode)
+        }
+        val titleId = watchKey.titleId ?: return null
+        val nativeId = catalog.nativeItemIdsForTitles(listOf(titleId))[titleId] ?: return null
+        return catalog.serverItemState(nativeId)
+    }
 
     suspend fun userProgressForNativeIds(
         nativeIds: List<String>,

@@ -51,6 +51,8 @@ data class WatchState(
     val lastMeaningfulAt: Instant? = null,
     val activeSessionId: SessionId? = null,
     val anchor: ResumeAnchor? = null,
+
+    val watchedAt: Instant? = null,
     val conflicts: List<WatchConflict> = emptyList(),
     val connectorStates: Map<String, ConnectorObservation> = emptyMap(),
 ) {
@@ -61,4 +63,7 @@ data class WatchState(
     }
 
     val isContinueWatching: Boolean get() = status == WatchStatus.IN_PROGRESS
+
+    val isWatched: Boolean
+        get() = watchedAt != null || status == WatchStatus.COMPLETED
 }

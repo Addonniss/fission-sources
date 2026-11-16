@@ -33,7 +33,8 @@ data class CardWatchedState(
 
         fun of(states: List<WatchState>): CardWatchedState = CardWatchedState(
             watchedUnits = states.asSequence()
-                .filter { it.status == WatchStatus.COMPLETED }
+
+                .filter { it.isWatched }
                 .mapTo(LinkedHashSet()) { it.watchKey },
             inProgressUnits = states.asSequence()
                 .filter { it.status == WatchStatus.IN_PROGRESS }

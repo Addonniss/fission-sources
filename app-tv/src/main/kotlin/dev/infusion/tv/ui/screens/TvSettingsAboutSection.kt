@@ -54,8 +54,6 @@ import dev.infusion.tv.updater.UpdateController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
-const val SettingsAboutRead = "settings:about:read"
-
 const val SettingsAboutIndependenceNoticeTag = "settings:about:independence"
 
 const val SettingsAboutPane = "settings:about:pane"
@@ -67,6 +65,28 @@ internal fun aboutLicenceTag(key: String): String = "$SettingsAboutLicencePrefix
 internal fun aboutLicenceRowTag(key: String): String = "settings:about:licence-row:$key"
 
 internal fun aboutLicenceReadTag(key: String): String = "settings:about:licence-read:$key"
+
+const val SettingsAboutSoftwareRow = "settings:about:software-row"
+
+const val SettingsAboutSoftwareRead = "settings:about:software-read"
+
+const val SettingsAboutServicesRow = "settings:about:services-row"
+
+const val SettingsAboutServicesRead = "settings:about:services-read"
+
+const val SettingsAboutReleaseRowPrefix = "settings:about:release-row"
+
+const val SettingsAboutReleaseReadPrefix = "settings:about:release-read"
+
+internal fun aboutReleaseNoteRowTag(versionName: String): String =
+    "$SettingsAboutReleaseRowPrefix:$versionName"
+
+internal fun aboutReleaseNoteReadTag(versionName: String): String =
+    "$SettingsAboutReleaseReadPrefix:$versionName"
+
+internal fun aboutReleaseNoteDisclosure(versionName: String): String = "release:$versionName"
+internal const val AboutSoftwareDisclosure = "software"
+internal const val AboutServicesDisclosure = "metadata-services"
 
 const val SettingsAboutCheckUpdates = "settings:about:updates"
 
@@ -173,6 +193,14 @@ internal const val AboutInstallHelp: String =
 internal fun aboutLicenceRowHelp(notice: AboutLicenceNotice): String =
     "Covers ${notice.covers}. Press to read the full licence."
 
+internal fun aboutReleaseNoteRowHelp(note: AboutReleaseNote): String = note.title
+
+internal const val AboutSoftwareHelp: String =
+    "The software fission is built on. Press to read the credits."
+
+internal const val AboutServicesHelp: String =
+    "The services and add-ons fission talks to. Press to read the credits."
+
 const val SettingsAboutVersionTag = "settings:about:version"
 
 internal fun aboutVersionTitle(installedVersionName: String?): String =
@@ -243,7 +271,7 @@ internal fun AboutSectionContent(
     val idleState = remember { MutableStateFlow<UpdateState>(UpdateState.Idle) }
     val updateState by (updateController?.state ?: idleState).collectAsStateWithLifecycle()
 
-    var expandedLicences by remember { mutableStateOf(emptySet<String>()) }
+    var expandedDisclosures by remember(entryToken) { mutableStateOf(emptySet<String>()) }
     var checking by remember { mutableStateOf(false) }
     var checkResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
 
@@ -255,14 +283,24 @@ internal fun AboutSectionContent(
     val controlKeys = buildList {
         if (updateController != null) add(SettingsAboutCheckUpdates)
         if (offeredRelease != null && updateController != null) add(SettingsAboutInstall)
-        add(SettingsAboutRead)
+        AboutReleaseNotes.forEach { note ->
+            add(aboutReleaseNoteRowTag(note.versionName))
+            if (aboutReleaseNoteDisclosure(note.versionName) in expandedDisclosures) {
+                add(aboutReleaseNoteReadTag(note.versionName))
+            }
+        }
+        add(SettingsAboutSoftwareRow)
+        if (AboutSoftwareDisclosure in expandedDisclosures) add(SettingsAboutSoftwareRead)
+        add(SettingsAboutServicesRow)
+        if (AboutServicesDisclosure in expandedDisclosures) add(SettingsAboutServicesRead)
         AboutLicenceNotices.forEach { notice ->
             add(aboutLicenceRowTag(notice.key))
-            if (notice.key in expandedLicences) add(aboutLicenceReadTag(notice.key))
+            if (notice.key in expandedDisclosures) add(aboutLicenceReadTag(notice.key))
         }
     }
     val firstControl = controlKeys.first()
-    RestoreSectionFocus(entryToken, rememberedKey, firstControl, requesters)
+
+    RestoreSectionFocus(entryToken, rememberedKey = null, firstControl, requesters)
 
     val onFocused: (String) -> Unit = { key ->
         focusedKey = key
@@ -373,66 +411,92 @@ internal fun AboutSectionContent(
         }
 
         Text("Release notes", style = InfusionTvScaleCalibration.Type.Headline)
-        AboutReadBlock(
-            tag = SettingsAboutRead,
-            requesters = requesters,
-            onFocused = onFocused,
-            layout = layout,
-            onFocusedAlign = { alignReadBlockTop(SettingsAboutRead) },
-        ) {
-            if (AboutReleaseNotes.isEmpty()) {
-                Text(
-                    AboutReleaseNotesUnavailable,
-                    style = InfusionTvScaleCalibration.Type.SettingsContent,
-                )
-            } else {
-                AboutReleaseNotes.forEach { note ->
+        if (AboutReleaseNotes.isEmpty()) {
+            Text(
+                AboutReleaseNotesUnavailable,
+                style = InfusionTvScaleCalibration.Type.SettingsContent,
+            )
+        } else {
+            AboutReleaseNotes.forEach { note ->
+                AboutDisclosure(
+                    disclosureKey = aboutReleaseNoteDisclosure(note.versionName),
+                    rowTag = aboutReleaseNoteRowTag(note.versionName),
+                    readTag = aboutReleaseNoteReadTag(note.versionName),
+
+                    title = "v${note.versionName}",
+                    help = aboutReleaseNoteRowHelp(note),
+                    expandedDisclosures = expandedDisclosures,
+                    onToggle = { key -> expandedDisclosures = toggleDisclosure(expandedDisclosures, key) },
+                    requesters = requesters,
+                    onFocused = onFocused,
+                    layout = layout,
+                    onFocusedAlign = { alignReadBlockTop(aboutReleaseNoteReadTag(note.versionName)) },
+                ) {
                     AboutReleaseNotePanel(note)
                 }
             }
         }
 
-        AboutCreditsPanel(AboutSoftwareCredits)
-        AboutCreditsPanel(AboutServiceCredits)
+        AboutDisclosure(
+            disclosureKey = AboutSoftwareDisclosure,
+            rowTag = SettingsAboutSoftwareRow,
+            readTag = SettingsAboutSoftwareRead,
+            title = AboutSoftwareCredits.firstOrNull()?.title ?: "Software",
+            help = AboutSoftwareHelp,
+            expandedDisclosures = expandedDisclosures,
+            onToggle = { key -> expandedDisclosures = toggleDisclosure(expandedDisclosures, key) },
+            requesters = requesters,
+            onFocused = onFocused,
+            layout = layout,
+            onFocusedAlign = { alignReadBlockTop(SettingsAboutSoftwareRead) },
+        ) {
+            AboutSoftwareCredits.forEach { group -> AboutCreditGroupPanel(group) }
+        }
+
+        AboutDisclosure(
+            disclosureKey = AboutServicesDisclosure,
+            rowTag = SettingsAboutServicesRow,
+            readTag = SettingsAboutServicesRead,
+
+            title = AboutServiceCredits.firstOrNull()?.title ?: "Metadata and services",
+            help = AboutServicesHelp,
+            expandedDisclosures = expandedDisclosures,
+            onToggle = { key -> expandedDisclosures = toggleDisclosure(expandedDisclosures, key) },
+            requesters = requesters,
+            onFocused = onFocused,
+            layout = layout,
+            onFocusedAlign = { alignReadBlockTop(SettingsAboutServicesRead) },
+        ) {
+
+            AboutServiceCredits.forEach { group -> AboutCreditGroupPanel(group) }
+        }
 
         Text("Licences", style = InfusionTvScaleCalibration.Type.Headline)
         AboutLicenceNotices.forEach { notice ->
-            val expanded = notice.key in expandedLicences
-            AboutActionRow(
-                tag = aboutLicenceRowTag(notice.key),
-                label = notice.title,
+            AboutDisclosure(
+                disclosureKey = notice.key,
+                rowTag = aboutLicenceRowTag(notice.key),
+                readTag = aboutLicenceReadTag(notice.key),
+                title = notice.title,
                 help = aboutLicenceRowHelp(notice),
+                expandedDisclosures = expandedDisclosures,
+                onToggle = { key -> expandedDisclosures = toggleDisclosure(expandedDisclosures, key) },
                 requesters = requesters,
                 onFocused = onFocused,
-                value = if (expanded) "Hide" else "Read",
-                onActivate = {
-                    expandedLicences = if (expanded) {
-                        expandedLicences - notice.key
-                    } else {
-                        expandedLicences + notice.key
-                    }
-                },
-            )
-            if (expanded) {
-                AboutReadBlock(
-                    tag = aboutLicenceReadTag(notice.key),
-                    requesters = requesters,
-                    onFocused = onFocused,
-                    layout = layout,
-                    onFocusedAlign = { alignReadBlockTop(aboutLicenceReadTag(notice.key)) },
-                ) {
-                    AboutPanel {
-                        Text(
-                            "Covers ${notice.covers}.",
-                            style = InfusionTvScaleCalibration.Type.SettingsContent,
-                        )
+                layout = layout,
+                onFocusedAlign = { alignReadBlockTop(aboutLicenceReadTag(notice.key)) },
+            ) {
+                AboutPanel {
+                    Text(
+                        "Covers ${notice.covers}.",
+                        style = InfusionTvScaleCalibration.Type.SettingsContent,
+                    )
 
-                        Text(
-                            notice.body,
-                            style = InfusionTvScaleCalibration.Type.SettingsContent,
-                            modifier = Modifier.testTag(aboutLicenceTag(notice.key)),
-                        )
-                    }
+                    Text(
+                        notice.body,
+                        style = InfusionTvScaleCalibration.Type.SettingsContent,
+                        modifier = Modifier.testTag(aboutLicenceTag(notice.key)),
+                    )
                 }
             }
         }
@@ -500,6 +564,46 @@ private fun AboutActionRow(
         )
     }
 }
+
+@Composable
+private fun AboutDisclosure(
+    disclosureKey: String,
+    rowTag: String,
+    readTag: String,
+    title: String,
+    help: String,
+    expandedDisclosures: Set<String>,
+    onToggle: (String) -> Unit,
+    requesters: MutableMap<String, FocusRequester>,
+    onFocused: (String) -> Unit,
+    layout: AboutLayoutMetrics,
+    onFocusedAlign: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val expanded = disclosureKey in expandedDisclosures
+    AboutActionRow(
+        tag = rowTag,
+        label = title,
+        help = help,
+        requesters = requesters,
+        onFocused = onFocused,
+        value = if (expanded) "Hide" else "Read",
+        onActivate = { onToggle(disclosureKey) },
+    )
+    if (expanded) {
+        AboutReadBlock(
+            tag = readTag,
+            requesters = requesters,
+            onFocused = onFocused,
+            layout = layout,
+            onFocusedAlign = onFocusedAlign,
+            content = content,
+        )
+    }
+}
+
+private fun toggleDisclosure(open: Set<String>, key: String): Set<String> =
+    if (key in open) open - key else open + key
 
 @Composable
 private fun AboutReadBlock(
@@ -570,16 +674,13 @@ internal fun aboutReleaseNoteTitleTag(versionName: String): String =
     "settings:about:release:$versionName"
 
 @Composable
-private fun AboutCreditsPanel(groups: List<AboutCreditGroup>) {
-    groups.forEach { group ->
-        AboutPanel {
-            Text(group.title, style = InfusionTvScaleCalibration.Type.Headline)
-            group.lines.forEach { line ->
-                Text(
-                    "${line.name} — ${line.detail}",
-                    style = InfusionTvScaleCalibration.Type.SettingsContent,
-                )
-            }
+private fun AboutCreditGroupPanel(group: AboutCreditGroup) {
+    AboutPanel {
+        group.lines.forEach { line ->
+            Text(
+                "${line.name} — ${line.detail}",
+                style = InfusionTvScaleCalibration.Type.SettingsContent,
+            )
         }
     }
 }

@@ -15,6 +15,7 @@ import dev.infusion.source.jellyfin.client.ApiResult
 import dev.infusion.source.jellyfin.client.FailureKind
 import dev.infusion.source.jellyfin.client.JellyfinFailure
 import dev.infusion.source.jellyfin.playback.JellyfinTransportCodec
+import dev.infusion.source.jellyfin.session.JellyfinForensicsLog
 import dev.infusion.source.jellyfin.session.JellyfinSessionReporter
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
@@ -24,6 +25,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class JellyfinWatchConnector(
     private val sourceId: SourceId,
@@ -38,12 +41,16 @@ class JellyfinWatchConnector(
     private val postPlaybackSync: JellyfinPostPlaybackSync? = null,
 
     private val videoPlaybackActive: () -> Boolean = { false },
+
+    private val drainOnSettlement: Boolean = false,
 ) {
 
     val connectorId: String = "jellyfin:${sourceId.value}"
 
     private var pingJob: Job? = null
     private var drainJob: Job? = null
+
+    private val drainMutex = Mutex()
 
     private val lifecycleOps = Channel<LifecycleOp>(Channel.UNLIMITED)
     private val lifecycleWorker: Job = scope.launch {
@@ -81,55 +88,53 @@ class JellyfinWatchConnector(
 
     fun onLocalEvent(event: WatchEvent.Local) {
         try {
-            if (!isForThisSource(event)) {
+            val forThisSource = isForThisSource(event)
+            if (forThisSource && activeLifecycleOwned) {
 
-                enqueuePostPlayback(event)
-                return
+                if (isLiveLifecycle(event.kind)) return
+                if (event.kind == WatchEvent.Kind.CANCELLED) {
+
+                    if (routedToReporter(event)) return
+
+                    enqueueSettlement(event)
+                    return
+                }
+                if (event.kind == WatchEvent.Kind.COMPLETED) {
+
+                    enqueueSettlement(event)
+                    return
+                }
             }
 
-            if (activeLifecycleOwned && (event.kind == WatchEvent.Kind.START ||
-                event.kind == WatchEvent.Kind.PROGRESS ||
-                event.kind == WatchEvent.Kind.PAUSE ||
-                event.kind == WatchEvent.Kind.CANCELLED ||
-                event.kind == WatchEvent.Kind.COMPLETED
-            )) return
-            val key = idempotencyKey(event)
-            outbox.enqueue(
-                OutboxEntry(
-                    entryId = OutboxEntryId.random(),
-                    connectorId = connectorId,
-                    idempotencyKey = key,
-                    payload = OutboxPayload.WatchAction(
-                        watchKey = event.watchKey,
-                        kind = event.kind,
-                        positionMs = event.positionMs,
-                        durationMs = event.durationMs,
-                        sessionId = event.sessionId,
-                        occurredAt = event.occurredAt,
-                    ),
-                    createdAt = now(),
-                ),
-            )
+            if (enqueueSettlement(event)) return
+            if (!forThisSource) return
+            enqueueWatchAction(event)
         } catch (_: Exception) {
 
         }
     }
 
-    private fun enqueuePostPlayback(event: WatchEvent.Local) {
-        if (postPlaybackSync == null) return
-        if (event.kind != WatchEvent.Kind.CANCELLED && event.kind != WatchEvent.Kind.COMPLETED) return
-        val position = event.positionMs ?: return
+    private fun isLiveLifecycle(kind: WatchEvent.Kind): Boolean =
+        kind == WatchEvent.Kind.START || kind == WatchEvent.Kind.PROGRESS || kind == WatchEvent.Kind.PAUSE
+
+    private fun routedToReporter(event: WatchEvent.Local): Boolean {
+        val watchSessionId = event.sessionId?.value?.toString() ?: return false
+        return contextStore.get(sourceId.value.toString(), watchSessionId) != null
+    }
+
+    private fun enqueueWatchAction(event: WatchEvent.Local) {
+        val key = idempotencyKey(event)
         outbox.enqueue(
             OutboxEntry(
                 entryId = OutboxEntryId.random(),
                 connectorId = connectorId,
-                idempotencyKey = "jellyfin:$sourceId:pos:${postPlaybackKey(event.watchKey)}:" +
-                    event.occurredAt.toEpochMilli(),
-                payload = OutboxPayload.PositionUpdate(
+                idempotencyKey = key,
+                payload = OutboxPayload.WatchAction(
                     watchKey = event.watchKey,
-                    positionMs = position.coerceAtLeast(0L),
+                    kind = event.kind,
+                    positionMs = event.positionMs,
                     durationMs = event.durationMs,
-                    completed = event.kind == WatchEvent.Kind.COMPLETED,
+                    sessionId = event.sessionId,
                     occurredAt = event.occurredAt,
                 ),
                 createdAt = now(),
@@ -137,7 +142,76 @@ class JellyfinWatchConnector(
         )
     }
 
-    private fun postPlaybackKey(key: WatchKey): String = buildString {
+    private data class Settlement(
+        val positionMs: Long,
+        val completed: Boolean,
+        val played: Boolean?,
+    )
+
+    private fun enqueueSettlement(event: WatchEvent.Local): Boolean {
+        if (!isSettlementKind(event.kind)) return false
+        if (postPlaybackSync == null) return false
+        val verdict = settlementOf(event) ?: return true
+        outbox.enqueue(
+            OutboxEntry(
+                entryId = OutboxEntryId.random(),
+                connectorId = connectorId,
+                idempotencyKey = "jellyfin:$sourceId:pos:${settlementKey(event.watchKey)}:" +
+                    event.occurredAt.toEpochMilli(),
+                payload = OutboxPayload.PositionUpdate(
+                    watchKey = event.watchKey,
+                    positionMs = verdict.positionMs,
+                    durationMs = event.durationMs,
+                    completed = verdict.completed,
+                    occurredAt = event.occurredAt,
+                    played = verdict.played,
+                ),
+                createdAt = now(),
+            ),
+        )
+        JellyfinForensicsLog.event(
+            "settlement-enqueued",
+            "kind=${event.kind} positionMs=${verdict.positionMs} completed=${verdict.completed} " +
+                "played=${verdict.played} episode=${event.watchKey.isEpisode}",
+        )
+        if (drainOnSettlement) kickDrain()
+        return true
+    }
+
+    private fun isSettlementKind(kind: WatchEvent.Kind): Boolean = when (kind) {
+        WatchEvent.Kind.CANCELLED,
+        WatchEvent.Kind.COMPLETED,
+        WatchEvent.Kind.EXPLICIT_WATCHED,
+        WatchEvent.Kind.EXPLICIT_RESET,
+        -> true
+        else -> false
+    }
+
+    private fun settlementOf(event: WatchEvent.Local): Settlement? = when (event.kind) {
+        WatchEvent.Kind.CANCELLED ->
+            event.positionMs?.let { Settlement(positionMs = it, completed = false, played = null) }
+        WatchEvent.Kind.COMPLETED ->
+            Settlement(positionMs = event.positionMs ?: 0L, completed = true, played = null)
+
+        WatchEvent.Kind.EXPLICIT_WATCHED ->
+            Settlement(positionMs = 0L, completed = true, played = null)
+
+        WatchEvent.Kind.EXPLICIT_RESET ->
+            Settlement(positionMs = 0L, completed = false, played = false)
+        else -> null
+    }
+
+    private fun kickDrain() {
+        scope.launch {
+            try {
+                syncPending()
+            } catch (_: Exception) {
+
+            }
+        }
+    }
+
+    private fun settlementKey(key: WatchKey): String = buildString {
         append(key.titleId?.value?.toString() ?: "")
         if (key.isEpisode) append(":${key.seasonNumber}:${key.episodeNumber}")
     }
@@ -157,18 +231,35 @@ class JellyfinWatchConnector(
                 durationMs = payload.durationMs,
                 completed = payload.completed,
                 occurredAt = payload.occurredAt,
+                played = payload.played,
             )
         ) {
             is JellyfinPostPlaybackSync.Outcome.Delivered -> {
+                JellyfinForensicsLog.event(
+                    "settlement-result",
+                    "outcome=delivered completed=${payload.completed} played=${payload.played} " +
+                        "requests=${outcome.requests}",
+                )
                 outbox.acknowledge(entry.entryId)
                 true
             }
             is JellyfinPostPlaybackSync.Outcome.Failed -> {
+
+                JellyfinForensicsLog.event(
+                    "settlement-result",
+                    "outcome=failed retryable=${outcome.retryable} completed=${payload.completed} " +
+                        "played=${payload.played}",
+                )
                 outbox.fail(entry.entryId, "post-playback-sync-failed", retryable = outcome.retryable, now = now())
                 false
             }
             is JellyfinPostPlaybackSync.Outcome.Skipped -> {
 
+                JellyfinForensicsLog.event(
+                    "settlement-result",
+                    "outcome=skipped reason=${outcome.reason.name.lowercase()} " +
+                        "completed=${payload.completed} played=${payload.played}",
+                )
                 outbox.fail(entry.entryId, "not-synced:${outcome.reason.name.lowercase()}", retryable = false, now = now())
                 false
             }
@@ -185,7 +276,9 @@ class JellyfinWatchConnector(
                     ?.let { it.watchKey == payload.watchKey && it.occurredAt.isAfter(payload.occurredAt) } == true
         }
 
-    suspend fun syncPending(limit: Int = 20): Int {
+    suspend fun syncPending(limit: Int = 20): Int = drainMutex.withLock { drainLocked(limit) }
+
+    private suspend fun drainLocked(limit: Int): Int {
         val session = sessionProvider() ?: return 0
         val entries = outbox.pending(connectorId, now()).take(limit)
         var acked = 0

@@ -223,7 +223,8 @@ fun detailsStageActions(
                 )
             },
         )
-        if (resumable) {
+
+        if (resumable || seen) {
             add(
                 DetailsStageActionItem(
                     action = DetailsStageAction.RESTART,

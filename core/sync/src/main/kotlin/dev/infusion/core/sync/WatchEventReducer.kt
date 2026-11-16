@@ -54,7 +54,8 @@ object WatchEventReducer {
             WatchEvent.Kind.EXPLICIT_RESET -> reset(state, event)
             WatchEvent.Kind.RESUME_RESET -> resumeReset(state, event)
             WatchEvent.Kind.CANCELLED -> cancelled(state, event, effectiveAnchor)
-            WatchEvent.Kind.SOURCE_FAILURE, WatchEvent.Kind.HANDOFF -> state
+
+            WatchEvent.Kind.SOURCE_FAILURE, WatchEvent.Kind.HANDOFF, WatchEvent.Kind.UNWATCHED -> state
         }
     }
 
@@ -65,10 +66,17 @@ object WatchEventReducer {
     ): WatchState {
         val position = event.positionMs ?: return state
         if (state.status == WatchStatus.EXPLICITLY_RESET) return state
-        if (state.status == WatchStatus.COMPLETED) return state
         val eventSession = event.sessionId
         val activeSession = state.activeSessionId
-        if (eventSession != null && activeSession != null && eventSession != activeSession) return state
+        if (state.status == WatchStatus.COMPLETED) {
+
+            val ownsCurrentAttempt = eventSession != null && eventSession == activeSession
+            if (!ownsCurrentAttempt || !playbackContradictsCompletion(state, position, event.durationMs)) {
+                return state
+            }
+        } else if (eventSession != null && activeSession != null && eventSession != activeSession) {
+            return state
+        }
         val duration = event.durationMs ?: state.durationMs
         return state.copy(
             status = WatchStatus.IN_PROGRESS,
@@ -87,7 +95,13 @@ object WatchEventReducer {
         if (state.status == WatchStatus.COMPLETED &&
             !playbackContradictsCompletion(state, event.positionMs, event.durationMs)
         ) {
-            return state
+
+            val attemptSession = event.sessionId
+            return if (attemptSession != null && attemptSession != state.activeSessionId) {
+                state.copy(activeSessionId = attemptSession)
+            } else {
+                state
+            }
         }
 
         val sameSessionRestart = event.sessionId != null && event.sessionId == state.activeSessionId
@@ -162,7 +176,8 @@ object WatchEventReducer {
             completionFraction = 1.0,
             lastEventId = event.eventId,
             lastMeaningfulAt = event.occurredAt,
-            activeSessionId = event.sessionId ?: state.activeSessionId,
+            activeSessionId = null,
+            watchedAt = event.occurredAt,
         )
     }
 
@@ -175,6 +190,8 @@ object WatchEventReducer {
         lastMeaningfulAt = event.occurredAt,
         activeSessionId = null,
         anchor = null,
+
+        watchedAt = null,
     )
 
     private fun resumeReset(state: WatchState, event: WatchEvent.Local): WatchState {
@@ -196,6 +213,10 @@ object WatchEventReducer {
 
         val seen = state.connectorStates[connector]
         if (seen != null && !event.observedAt.isAfter(seen.observedAt)) return state
+
+        if (event.kind == WatchEvent.Kind.UNWATCHED) {
+            return applyImportedUnwatched(state, event)
+        }
 
         if (state.status == WatchStatus.COMPLETED) {
             val completedAt = state.lastMeaningfulAt
@@ -234,6 +255,10 @@ object WatchEventReducer {
                     description = "Connector observed ${event.kind} after an explicit reset; the reset stands.",
                 ),
             )
+        }
+
+        if (event.kind == WatchEvent.Kind.COMPLETED) {
+            return applyImportedWatched(state, event)
         }
 
         val lastMeaningful = state.lastMeaningfulAt
@@ -277,6 +302,8 @@ object WatchEventReducer {
                     completionFraction = 1.0,
                     lastEventId = event.eventId,
                     lastMeaningfulAt = event.observedAt,
+
+                    watchedAt = event.observedAt,
                     connectorStates = state.connectorStates + (
                         connector to ConnectorObservation(
                             connectorId = connector,
@@ -297,6 +324,116 @@ object WatchEventReducer {
         }
     }
 
+    private fun applyImportedWatched(state: WatchState, event: WatchEvent.Imported): WatchState {
+        val connector = event.connectorId
+        val watchedAt = listOfNotNull(state.watchedAt, event.observedAt).max()
+        val observation = state.connectorStates + (
+            connector to ConnectorObservation(
+                connectorId = connector,
+                status = WatchStatus.COMPLETED,
+                positionMs = state.positionMs,
+                durationMs = state.durationMs,
+                observedAt = event.observedAt,
+            )
+            )
+        val attemptIsNewer = state.status == WatchStatus.IN_PROGRESS &&
+            state.positionMs > 0L &&
+            state.lastMeaningfulAt != null &&
+            event.observedAt.isBefore(state.lastMeaningfulAt)
+        if (attemptIsNewer) {
+
+            return state.copy(watchedAt = watchedAt, connectorStates = observation)
+        }
+        val duration = event.durationMs ?: state.durationMs
+        val position = maxOf(state.positionMs, event.positionMs ?: state.positionMs)
+        return state.copy(
+            status = WatchStatus.COMPLETED,
+            positionMs = position,
+            durationMs = duration,
+            completionFraction = 1.0,
+            lastEventId = event.eventId,
+            lastMeaningfulAt = listOfNotNull(state.lastMeaningfulAt, event.observedAt).max(),
+            watchedAt = watchedAt,
+            activeSessionId = null,
+            connectorStates = observation,
+        )
+    }
+
+    private fun applyImportedUnwatched(state: WatchState, event: WatchEvent.Imported): WatchState {
+        val connector = event.connectorId
+        val observation = state.connectorStates + (
+            connector to ConnectorObservation(
+                connectorId = connector,
+                status = WatchStatus.UNSEEN,
+                positionMs = if (state.status == WatchStatus.COMPLETED) 0L else state.positionMs,
+                durationMs = state.durationMs,
+                observedAt = event.observedAt,
+            )
+            )
+        val recorded = state.copy(connectorStates = observation)
+
+        if (!state.isWatched) return recorded
+
+        if (state.status == WatchStatus.EXPLICITLY_RESET) return recorded
+
+        val lastMeaningful = state.lastMeaningfulAt
+        if (lastMeaningful != null && lastMeaningful.isAfter(event.observedAt)) {
+            return withConflict(
+                recorded,
+                WatchConflict(
+                    key = "unwatch-stale:${event.watchKey}:$connector",
+                    kind = ConflictKind.STALE_OBSERVATION,
+                    connectorId = connector,
+                    localPositionMs = state.positionMs,
+                    remotePositionMs = 0L,
+                    observedAt = event.observedAt,
+                    description = "Connector stated the unit is not watched at ${event.observedAt}, which " +
+                        "predates the last meaningful local change at $lastMeaningful; the watched record stands.",
+                ),
+            )
+        }
+
+        val otherWatched = state.connectorStates.entries.firstOrNull { (id, held) ->
+            id != connector && held.status == WatchStatus.COMPLETED
+        }
+        if (otherWatched != null) {
+            return withConflict(
+                recorded,
+                WatchConflict(
+                    key = "unwatch-other:${event.watchKey}:$connector",
+                    kind = ConflictKind.COMPLETION_VS_OBSERVATION,
+                    connectorId = connector,
+                    localPositionMs = state.positionMs,
+                    remotePositionMs = 0L,
+                    observedAt = event.observedAt,
+                    description = "Connector stated the unit is not watched, but ${otherWatched.key} states it " +
+                        "watched; the other provider's statement stands.",
+                ),
+            )
+        }
+        val lastApplied = listOfNotNull(state.lastMeaningfulAt, event.observedAt).max()
+        return if (state.status == WatchStatus.COMPLETED) {
+
+            recorded.copy(
+                status = WatchStatus.UNSEEN,
+                positionMs = 0L,
+                completionFraction = 0.0,
+                lastEventId = event.eventId,
+                lastMeaningfulAt = lastApplied,
+                activeSessionId = null,
+                anchor = null,
+                watchedAt = null,
+            )
+        } else {
+
+            recorded.copy(
+                lastEventId = event.eventId,
+                lastMeaningfulAt = lastApplied,
+                watchedAt = null,
+            )
+        }
+    }
+
     private fun applyImportedProgress(state: WatchState, event: WatchEvent.Imported): WatchState {
         val connector = event.connectorId
         val duration = event.durationMs ?: state.durationMs
@@ -312,6 +449,8 @@ object WatchEventReducer {
             completionFraction = fraction,
             lastEventId = event.eventId,
             lastMeaningfulAt = event.observedAt,
+
+            watchedAt = if (status == WatchStatus.COMPLETED) event.observedAt else state.watchedAt,
             connectorStates = state.connectorStates + (
                 connector to ConnectorObservation(
                     connectorId = connector,

@@ -50,6 +50,8 @@ class EpisodeDetailsStateHolder(
 
     private val hintResumeMs: Long? = resumeHintMs?.takeIf { it > 0L }
 
+    private val seededFacts: DetailsWatchFacts = DetailsWatchFacts.hint(hintResumeMs)
+
     private val serverResumeState = MutableStateFlow<ServerResumePosition?>(null)
 
     private val _state = MutableStateFlow(
@@ -59,11 +61,11 @@ class EpisodeDetailsStateHolder(
             seasonNumber = seasonNumber,
             episodeNumber = episodeNumber,
 
-            watched = hintResumeMs?.let { WatchedDisplay.InProgress(it) } ?: WatchedDisplay.Unseen,
-            resumePositionMs = hintResumeMs,
+            watched = seededFacts.watched,
+            resumePositionMs = seededFacts.attemptResumePositionMs,
 
             primaryAction = detailsPrimaryAction(
-                resumable = hintResumeMs != null,
+                resumable = seededFacts.resumable,
                 identityEstablished = true,
             ),
             initialFocusKey = "primary",
@@ -88,8 +90,7 @@ class EpisodeDetailsStateHolder(
                             selectedEditionLabel = selectedEditionLabel(),
 
                             primaryAction = detailsPrimaryAction(
-                                resumable = current.watched is WatchedDisplay.InProgress &&
-                                    current.resumePositionMs != null,
+                                resumable = current.resumePositionMs != null,
                                 identityEstablished = true,
                             ),
                             unplayableReason = null,
@@ -125,27 +126,19 @@ class EpisodeDetailsStateHolder(
             ) { watchStates, serverPosition -> watchStates to serverPosition }
                 .collect { (watchStates, serverPosition) ->
                     val state = watchStates.firstOrNull { it.watchKey == watchKey }
-                    val localWatched: WatchedDisplay = when (state?.status) {
-                        WatchStatus.IN_PROGRESS -> WatchedDisplay.InProgress(state.positionMs, state.completionFraction)
-                        WatchStatus.COMPLETED -> WatchedDisplay.Completed
-                        else -> WatchedDisplay.Unseen
-                    }
 
-                    val displayWatched: WatchedDisplay = effectiveWatched(
+                    val facts = detailsWatchFacts(
+                        localState = state,
                         serverResume = serverPosition,
-                        local = localWatched,
-                        localStatePresent = state != null,
                         hintResumeMs = hintResumeMs,
-                        localObservedAt = state?.lastMeaningfulAt,
                     )
-                    val resumePositionMs = (displayWatched as? WatchedDisplay.InProgress)?.positionMs?.takeIf { it > 0 }
                     _state.update { current ->
                         current.copy(
-                            watched = displayWatched,
-                            resumePositionMs = resumePositionMs,
+                            watched = facts.watched,
+                            resumePositionMs = facts.attemptResumePositionMs,
 
                             primaryAction = detailsPrimaryAction(
-                                resumable = displayWatched is WatchedDisplay.InProgress && resumePositionMs != null,
+                                resumable = facts.resumable,
                                 identityEstablished = true,
                             ),
                         )

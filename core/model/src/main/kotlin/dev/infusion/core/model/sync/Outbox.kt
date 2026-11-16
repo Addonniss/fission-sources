@@ -39,6 +39,8 @@ sealed class OutboxPayload {
         val durationMs: Long? = null,
         val completed: Boolean = false,
         val occurredAt: Instant,
+
+        val played: Boolean? = null,
     ) : OutboxPayload() {
 
         init {

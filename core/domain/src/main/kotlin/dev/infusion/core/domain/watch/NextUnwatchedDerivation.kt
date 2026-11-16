@@ -34,8 +34,7 @@ object NextUnwatchedDerivation {
             val latestCompleted = completed.last()
             val afterLatest = ordered.dropWhile { it != latestCompleted }.drop(1)
             afterLatest.firstOrNull { ep ->
-                val status = watchStates[ep.watchKey]?.status
-                status == null || status == dev.infusion.core.model.watch.WatchStatus.EXPLICITLY_RESET
+                watchStates[ep.watchKey]?.status != dev.infusion.core.model.watch.WatchStatus.COMPLETED
             }?.let { return it }
         }
 
