@@ -9,6 +9,8 @@ enum class PublicListProvider(
     TRAKT("trakt", "Trakt"),
     MDBLIST("mdblist", "MDBList"),
     SIMKL("simkl", "Simkl"),
+
+    WETRAKR("wetrakr", "WeTrakr"),
     ;
 
     companion object {

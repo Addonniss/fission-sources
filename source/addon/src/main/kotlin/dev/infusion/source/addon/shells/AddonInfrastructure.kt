@@ -167,9 +167,9 @@ class AddonInfrastructure private constructor(
         }
 
     val subtitleMerger: AddonSubtitleMerger by lazy {
+
         AddonSubtitleMerger(
             subtitleRepository = resources.subtitle,
-            lookup = lookup,
         )
     }
 

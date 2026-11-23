@@ -1,0 +1,78 @@
+package dev.infusion.tracking.wetrakr
+
+import dev.infusion.core.domain.tracking.TrackingInboundOutcome
+import dev.infusion.core.domain.tracking.TrackingWatchedHistoryPage
+import dev.infusion.core.domain.tracking.TrackingWatchedHistoryPort
+import dev.infusion.core.domain.tracking.TrackingWatchedHistoryRequest
+import dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit
+import java.time.Instant
+import kotlinx.coroutines.CancellationException
+
+class WeTrakrWatchedHistory(
+    private val client: WeTrakrHttpClient,
+    private val auth: WeTrakrAuthRepository,
+) : TrackingWatchedHistoryPort {
+
+    override val providerId: String = WeTrakrAuthRepository.WETRAKR_PROVIDER_ID
+
+    override fun accountConnected(): Boolean = auth.isConnected()
+
+    override suspend fun readHistory(
+        request: TrackingWatchedHistoryRequest,
+    ): TrackingInboundOutcome<TrackingWatchedHistoryPage> {
+        if (!auth.isConnected()) return TrackingInboundOutcome.Unauthorized(NO_AUTHORIZATION)
+
+        val readStartedAt = Instant.now()
+        val target = when (request.unit) {
+            TrackingWatchedHistoryUnit.MOVIE -> WeTrakrInboundMapping.TARGET_MOVIES
+            TrackingWatchedHistoryUnit.EPISODE -> WeTrakrInboundMapping.TARGET_EPISODES
+        }
+        val limit = request.limit.coerceIn(1, PAGE_LIMIT)
+        val outcome = send(
+            WeTrakrInboundMapping.watchedHistoryRequest(
+                target = target,
+                cursor = request.cursor,
+                since = request.since,
+                limit = limit,
+            ),
+        )
+        val response = when (outcome) {
+            is WeTrakrOutcome.Success -> outcome.response
+            is WeTrakrOutcome.Unauthorized -> return TrackingInboundOutcome.Unauthorized(outcome.reason)
+            is WeTrakrOutcome.Retry -> return TrackingInboundOutcome.Unavailable(outcome.reason)
+            is WeTrakrOutcome.Rejected -> return TrackingInboundOutcome.Rejected(outcome.reason)
+        }
+        val page = WeTrakrInboundMapping.watchedHistoryPage(
+            body = response.body,
+            unit = request.unit,
+            nextCursor = WeTrakrInboundMapping.nextCursor(response.headers),
+            readStartedAt = readStartedAt,
+        ) ?: return TrackingInboundOutcome.Rejected(SHAPE_CHANGED)
+        return TrackingInboundOutcome.Ok(page)
+    }
+
+    private suspend fun send(request: WeTrakrRequest): WeTrakrOutcome {
+        val token = readToken { auth.accessToken() } ?: return WeTrakrOutcome.Unauthorized(NO_AUTHORIZATION)
+        val outcome = client.execute(request, token)
+        if (outcome !is WeTrakrOutcome.Unauthorized) return outcome
+        val refreshed = readToken { auth.refresh() } ?: return outcome
+        return client.execute(request, refreshed)
+    }
+
+    private suspend fun readToken(read: suspend () -> String?): String? = try {
+        read()?.takeIf { it.isNotBlank() }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        null
+    }
+
+    companion object {
+
+        const val PAGE_LIMIT: Int = 500
+
+        const val NO_AUTHORIZATION: String = "wetrakr_no_authorization"
+
+        const val SHAPE_CHANGED: String = "wetrakr_watched_history_shape_changed"
+    }
+}

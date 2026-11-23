@@ -92,7 +92,7 @@ class HomeStateHolder(
                         preview = dev.infusion.core.model.MediaPreview(
                             titleId = title,
                             kind = kind,
-                            displayTitle = info?.displayTitle ?: "Unknown title",
+                            displayTitle = info?.displayTitle ?: CW_UNKNOWN_TITLE,
 
                             year = info?.year,
 
@@ -149,6 +149,8 @@ class HomeStateHolder(
     }
 }
 
+const val CW_UNKNOWN_TITLE: String = "Unknown title"
+
 data class CwCatalogInfo(
 
     val displayTitle: String,
@@ -178,7 +180,7 @@ suspend fun resolveCwTitleFromCatalog(
     val movieId = key.titleId
     if (movieId != null) {
         val details = catalog.observeTitleDetails(movieId).firstOrNull()
-            ?: return CwCatalogInfo(displayTitle = "Unknown title")
+            ?: return CwCatalogInfo(displayTitle = CW_UNKNOWN_TITLE)
         val native = catalog.nativeItemIdFor(movieId)
         return CwCatalogInfo(
             displayTitle = details.title.displayTitle,
@@ -209,7 +211,7 @@ suspend fun resolveCwTitleFromCatalog(
 
     val episodeRef = episodeRef(episodeHierarchy, seriesId, seasonNumber, episodeNumber)
     return CwCatalogInfo(
-        displayTitle = seriesName ?: "Unknown title",
+        displayTitle = seriesName ?: CW_UNKNOWN_TITLE,
 
         airDate = episodeRef?.released?.let(::parseIsoDate),
         episodeTitle = episodeRef?.title?.takeIf { it.isNotBlank() },

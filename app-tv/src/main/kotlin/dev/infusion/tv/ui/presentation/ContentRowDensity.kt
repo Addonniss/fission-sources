@@ -138,6 +138,14 @@ fun <T> InfusionContentRow(
     val restoredIndex = remember { mutableIntStateOf(-1) }
     val restoredOffset = remember { mutableIntStateOf(0) }
     val restoredLeadingKey = remember { mutableStateOf<String?>(null) }
+
+    val rowHasOwnedFocus = remember { mutableStateOf(false) }
+    val liveFocusedKey = zone?.registry?.focusedKey
+    SideEffect {
+        if (liveFocusedKey != null && rowItemKeys.contains(liveFocusedKey)) {
+            rowHasOwnedFocus.value = true
+        }
+    }
     val anchoredRowSpec = rememberRailAnchoredSpec(listState, restoredPlacement)
     val ambientBringIntoViewSpec = LocalBringIntoViewSpec.current
     val rowKeyHandler = rememberRailSelectionHandler(rowItemKeys, paging, restoredPlacement)
@@ -151,6 +159,8 @@ fun <T> InfusionContentRow(
                 .collect { (index, offset) ->
                     if (!viewportResolved.value) return@collect
                     if (restoredPlacement.value && index != restoredIndex.intValue) return@collect
+
+                    if (!rowHasOwnedFocus.value && !restoredPlacement.value) return@collect
                     val leading = currentItemKeys.value.getOrNull(index) ?: return@collect
                     viewportMemory.rememberViewport(key, RowViewport(leading, offset))
                 }
@@ -213,6 +223,17 @@ fun <T> InfusionContentRow(
         } else {
             items.take(materialization.materializedCount)
         }
+    }
+
+    LaunchedEffect(materialized, restoredPlacement.value, rowHasOwnedFocus.value) {
+        if (zone == null) return@LaunchedEffect
+        if (rowHasOwnedFocus.value) return@LaunchedEffect
+        if (restoredPlacement.value) return@LaunchedEffect
+        if (materialized.isEmpty()) return@LaunchedEffect
+
+        val armed = zone.armedKey
+        if (armed != null && rowItemKeys.contains(armed)) return@LaunchedEffect
+        listState.requestScrollToItem(0, 0)
     }
 
     LaunchedEffect(zone?.armedKey, items, materialization.materializedCount) {

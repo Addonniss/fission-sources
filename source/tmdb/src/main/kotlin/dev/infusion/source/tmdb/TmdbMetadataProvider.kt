@@ -92,6 +92,21 @@ class TmdbMetadataProvider(
         return mapper.attachVideos(details, videos)
     }
 
+    override suspend fun externalIds(identity: MediaIdentity, locale: MetadataLocale): ExternalIds? {
+        val tmdbId = requireTmdbId(identity)
+        val path = when (identity.type) {
+            MediaType.MOVIE -> "/movie/$tmdbId/external_ids"
+            MediaType.SHOW -> "/tv/$tmdbId/external_ids"
+        }
+        val document = get(path, query(locale), allowNotFound = true) ?: return null
+        val stated = ExternalIds(
+            tmdbId = TmdbJson.long(document, "id")?.takeIf { it > 0 } ?: tmdbId,
+            imdbId = TmdbJson.string(document, "imdb_id")?.trim()?.takeIf { it.isNotEmpty() },
+            tvdbId = TmdbJson.long(document, "tvdb_id")?.takeIf { it > 0 },
+        )
+        return stated.takeUnless { it.isEmpty }
+    }
+
     override suspend fun titledLandscape(
         identity: MediaIdentity,
         language: String,

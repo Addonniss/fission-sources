@@ -77,9 +77,11 @@ class AddonNativeCatalogPort(
 
     private fun addonNativeDetails(titleId: TitleId): TitleDetails? {
         val title = lookup.byId(titleId) ?: return null
-        val rows = availabilityStore.byTitle(titleId)
-        if (rows.isEmpty()) return null
-        return TitleDetails(title = title, editions = emptyList(), availability = rows)
+        return TitleDetails(
+            title = title,
+            editions = emptyList(),
+            availability = availabilityStore.byTitle(titleId),
+        )
     }
 
     override suspend fun nativeItemIdFor(titleId: TitleId): String? {

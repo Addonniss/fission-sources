@@ -51,12 +51,15 @@ fun watchlistProviderLogoRes(providerId: String?): Int? = when (providerId) {
     WATCHLIST_PROVIDER_TRAKT -> R.drawable.ic_provider_trakt
     WATCHLIST_PROVIDER_SIMKL -> R.drawable.ic_provider_simkl
     WATCHLIST_PROVIDER_MDBLIST -> R.drawable.ic_provider_mdblist
+    WATCHLIST_PROVIDER_WETRAKR -> R.drawable.ic_provider_wetrakr
     else -> null
 }
 
 const val WATCHLIST_PROVIDER_TRAKT: String = "trakt"
 const val WATCHLIST_PROVIDER_SIMKL: String = "simkl"
 const val WATCHLIST_PROVIDER_MDBLIST: String = "mdblist"
+
+const val WATCHLIST_PROVIDER_WETRAKR: String = "wetrakr"
 
 @Composable
 private fun InfusionWatchlistBadgeGlyph(

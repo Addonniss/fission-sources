@@ -147,6 +147,8 @@ dependencies {
 
     implementation(project(":tracking:mdblist"))
 
+    implementation(project(":tracking:wetrakr"))
+
     implementation(project(":core:metadata"))
     implementation(project(":source:tmdb"))
 
@@ -436,6 +438,61 @@ val generateMdblistCredential = tasks.register("generateMdblistCredential") {
 android.sourceSets.getByName("main").java.srcDir(mdblistCredentialSourceDir)
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(generateMdblistCredential)
+}
+
+val wetrakrClientIdFromEnvironment: String = System.getenv("WETRAKR_CLIENT_ID").orEmpty().trim()
+
+val wetrakrCredentialSourceDir = layout.buildDirectory.dir("generated/wetrakrCredential/kotlin")
+
+val generateWetrakrCredential = tasks.register("generateWetrakrCredential") {
+    description = "Generates the build-time WeTrakr public app-key seam from WETRAKR_CLIENT_ID."
+    val outputDir = wetrakrCredentialSourceDir
+    outputs.dir(outputDir)
+
+    outputs.upToDateWhen { false }
+    val raw = wetrakrClientIdFromEnvironment
+    doLast {
+        val target = outputDir.get().asFile.resolve("dev/infusion/tv/tracking/GeneratedWeTrakrCredential.kt")
+        target.parentFile.mkdirs()
+        val chunks = if (raw.isEmpty()) emptyList() else raw.chunked(8)
+        val chunksLiteral = chunks.joinToString(", ") { "\"$it\"" }
+        target.writeText(
+            """
+            |package dev.infusion.tv.tracking
+            |
+            |/*
+            | * GENERATED FILE — do not edit, do not commit (WeTrakr W1).
+            | *
+            | * The build-time WeTrakr PUBLIC app key of INFUSION's own application, from the
+            | * BUILD environment (WETRAKR_CLIENT_ID) and deliberately chunked so it is never
+            | * stored as one contiguous literal. Absent/blank at build time yields an EMPTY id:
+            | * the WeTrakr provider then reports the missing registration instead of attempting a
+            | * request, and no live account connection is claimed.
+            | *
+            | * This is a PUBLIC application identifier. WeTrakr's device grant requires NO
+            | * client_secret and none exists anywhere in this build: the secret is never read
+            | * from the environment, never generated into source and never packaged.
+            | */
+            |internal object GeneratedWeTrakrCredential {
+            |    /** The build-time public app key (empty when the build env carried none). */
+            |    fun clientId(): String = CHUNKS.joinToString("")
+            |
+            |    private val CHUNKS: List<String> = listOf($chunksLiteral)
+            |}
+            |
+            """.trimMargin(),
+        )
+
+        logger.lifecycle(
+            "WeTrakr registration: WETRAKR_CLIENT_ID=${if (raw.isBlank()) "ABSENT" else "present"} " +
+                "client_secret=NOT-READ-BY-DESIGN",
+        )
+    }
+}
+
+android.sourceSets.getByName("main").java.srcDir(wetrakrCredentialSourceDir)
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(generateWetrakrCredential)
 }
 
 val aboutReleaseNotesSourceDir = layout.buildDirectory.dir("generated/aboutReleaseNotes/kotlin")

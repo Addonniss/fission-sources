@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,6 +94,8 @@ class HomeContinueWatchingStateHolder(
     private val resolveCwTitle: suspend (WatchState) -> CwCatalogInfo? = { null },
     private val provenanceFor: suspend (WatchState) -> String? = { null },
     private val artworkFor: suspend (WatchState) -> MediaArtworkRef? = { null },
+
+    private val serverArtworkFor: suspend (JellyfinTabRowItem) -> MediaArtworkRef? = { null },
     private val jellyfinSourceId: SourceId? = null,
 
     private val trace: (String) -> Unit = {},
@@ -116,6 +119,12 @@ class HomeContinueWatchingStateHolder(
     private val _cwInfo = MutableStateFlow<Map<WatchKey, CwCatalogInfo>>(emptyMap())
     private val _provenance = MutableStateFlow<Map<WatchKey, String?>>(emptyMap())
     private val _artwork = MutableStateFlow<Map<WatchKey, MediaArtworkRef>>(emptyMap())
+
+    private val _serverArtwork = MutableStateFlow<Map<String, MediaArtworkRef?>>(emptyMap())
+
+    private val serverPresenting: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    private val _serverCards = MutableStateFlow<List<ServerCardRequest>>(emptyList())
     private val _jellyfin = MutableStateFlow<JellyfinSegment>(JellyfinSegment.Disabled)
     private val _state = MutableStateFlow(HomeContinueWatchingUiState())
     val state: StateFlow<HomeContinueWatchingUiState> = _state.asStateFlow()
@@ -161,6 +170,8 @@ class HomeContinueWatchingStateHolder(
 
     private suspend fun collectLedger() = coroutineScope {
         val work = this
+
+        launch { presentServerCards(work) }
 
         localContinueWatching.observeProjection().collect { projection ->
             localLoaded = true
@@ -214,6 +225,10 @@ class HomeContinueWatchingStateHolder(
                 if (!dev.infusion.core.domain.home.HomePresentationPolicy
                         .presentationIsFresh(record, now)
                 ) {
+                    return@mapNotNull null
+                }
+
+                if (record.displayTitle == CW_UNKNOWN_TITLE) {
                     return@mapNotNull null
                 }
                 state to record
@@ -272,6 +287,8 @@ class HomeContinueWatchingStateHolder(
         val profile = presentationProfile()
         if (profile.isBlank()) return
         val info = _cwInfo.value[key]
+
+        if (info?.displayTitle == CW_UNKNOWN_TITLE) return
         val provenance = _provenance.value[key]
 
         val artwork = durableArtworkFor(state, _artwork.value[key])
@@ -378,7 +395,7 @@ class HomeContinueWatchingStateHolder(
                         facts += launch {
                             val info = withContext(ioDispatcher) { resolveCwTitle(state) }
                             if (info != null) {
-                                _cwInfo.value = _cwInfo.value + (key to info)
+                                _cwInfo.update { it + (key to info) }
                                 publish()
                             }
                         }
@@ -386,7 +403,7 @@ class HomeContinueWatchingStateHolder(
                     if (needsProvenance) {
                         facts += launch {
                             val label = withContext(ioDispatcher) { provenanceFor(state) }
-                            _provenance.value = _provenance.value + (key to label)
+                            _provenance.update { it + (key to label) }
                             publish()
                         }
                     }
@@ -394,7 +411,7 @@ class HomeContinueWatchingStateHolder(
                         facts += launch {
                             val artwork = withContext(ioDispatcher) { artworkFor(state) }
                             if (artwork != null) {
-                                _artwork.value = _artwork.value + (key to artwork)
+                                _artwork.update { it + (key to artwork) }
                                 publish()
                             }
                         }
@@ -407,6 +424,52 @@ class HomeContinueWatchingStateHolder(
                 }
             }
         }
+    }
+
+    private suspend fun presentServerCards(work: CoroutineScope) {
+        _serverCards.collect { requests ->
+            for (request in requests) {
+                val key = request.item.key
+
+                if (_serverArtwork.value.containsKey(key)) continue
+                if (!serverPresenting.add(key)) continue
+                work.launch {
+                    try {
+                        presentationWindows?.awaitPresented(
+                            request.unifiedIndex,
+                            request.familyIndex,
+                            request.episodic,
+                        )
+                        val artwork = withContext(ioDispatcher) { serverArtworkFor(request.item) }
+                        _serverArtwork.update { it + (key to artwork) }
+
+                        if (artwork != null) publish()
+                    } finally {
+                        serverPresenting.remove(key)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun serverCardRequests(cards: List<HomeCwCard>): List<ServerCardRequest> {
+        val requests = ArrayList<ServerCardRequest>()
+        var movieIndex = 0
+        var episodeIndex = 0
+        cards.forEachIndexed { unifiedIndex, card ->
+            val item = (card.origin as? HomeCwOrigin.Jellyfin)?.item
+            val episodic = card.preview.kind == TitleKind.EPISODE
+            val familyIndex = if (episodic) episodeIndex++ else movieIndex++
+            if (item == null) return@forEachIndexed
+            if (_serverArtwork.value.containsKey(item.key)) return@forEachIndexed
+            requests += ServerCardRequest(
+                item = item,
+                unifiedIndex = unifiedIndex,
+                familyIndex = familyIndex,
+                episodic = episodic,
+            )
+        }
+        return requests
     }
 
     private fun publish() {
@@ -441,6 +504,8 @@ class HomeContinueWatchingStateHolder(
             .filterNot { card -> serverCardContradictsLocalSettlement(card, settledUnits, localInProgressKeys) }
 
         val cards = (localCards + jellyfinCards).sortedWith(unifiedContinueWatchingOrder)
+
+        _serverCards.value = serverCardRequests(cards)
 
         val row = when {
             cards.isNotEmpty() -> HomeContinueWatchingRow.Loaded(cards)
@@ -588,7 +653,7 @@ class HomeContinueWatchingStateHolder(
             preview = MediaPreview(
                 titleId = canonicalTitle,
                 kind = kind,
-                displayTitle = info?.displayTitle ?: "Unknown title",
+                displayTitle = info?.displayTitle ?: CW_UNKNOWN_TITLE,
 
                 watchKey = key,
 
@@ -619,11 +684,18 @@ class HomeContinueWatchingStateHolder(
     private fun jellyfinCard(item: JellyfinTabRowItem): HomeCwCard = HomeCwCard(
         key = item.key,
 
-        preview = item.preview,
+        preview = item.preview.copy(artwork = _serverArtwork.value[item.key]),
         provenanceLabel = "Jellyfin",
         origin = HomeCwOrigin.Jellyfin(item),
     )
 }
+
+private data class ServerCardRequest(
+    val item: JellyfinTabRowItem,
+    val unifiedIndex: Int,
+    val familyIndex: Int,
+    val episodic: Boolean,
+)
 
 private val unifiedContinueWatchingOrder: Comparator<HomeCwCard> =
     compareByDescending<HomeCwCard> { it.realActivityAt() ?: Instant.EPOCH }

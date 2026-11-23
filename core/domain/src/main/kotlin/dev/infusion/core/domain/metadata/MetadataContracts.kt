@@ -118,6 +118,8 @@ interface MetadataProvider {
 
     suspend fun details(identity: MediaIdentity, locale: MetadataLocale): MediaDetails?
 
+    suspend fun externalIds(identity: MediaIdentity, locale: MetadataLocale): ExternalIds? = null
+
     suspend fun titledLandscape(
         identity: MediaIdentity,
         language: String,

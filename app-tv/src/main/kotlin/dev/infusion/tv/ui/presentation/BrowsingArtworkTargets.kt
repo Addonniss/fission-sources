@@ -5,7 +5,7 @@ import androidx.compose.ui.unit.dp
 import dev.infusion.core.model.TitleKind
 
 fun homeCwArtworkTargetPx(
-    kind: TitleKind,
+    kind: TitleKind?,
     policy: ContentCardPresentation,
     screenWidthDp: Int,
     density: Float,

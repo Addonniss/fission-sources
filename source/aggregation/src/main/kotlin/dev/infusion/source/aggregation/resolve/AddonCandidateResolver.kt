@@ -46,18 +46,36 @@ data class ProviderResolutionObservation(
     val titleId: String?,
     val imdbId: String?,
     val providers: List<ProviderObservationEntry>,
+
+    val resourceType: String? = null,
+
+    val skipped: List<ProviderSkipEntry> = emptyList(),
+
+    val providersOmitted: Int = 0,
+
+    val skippedOmitted: Int = 0,
 ) {
     init {
         require(providers.size <= MAX_PROVIDERS) { "observation provider count exceeds cap" }
         require(imdbId == null || imdbId.startsWith("tt")) { "imdb alias must be a tt... id" }
+        require(skipped.size <= MAX_PROVIDERS) { "observation skip count exceeds cap" }
         require(providers.all { it.displayName == ProviderObservationEntry.safeLabel(it.displayName) }) {
             "provider display names must be sanitized for the observation"
         }
+        require(skipped.all { it.addonId == ProviderObservationEntry.safeLabel(it.addonId) }) {
+            "skipped add-on ids must be sanitized for the observation"
+        }
+        require(providersOmitted >= 0) { "omitted provider count must be non-negative" }
+        require(skippedOmitted >= 0) { "omitted skip count must be non-negative" }
     }
 
     fun toLogLines(): List<String> = buildList {
         add(
-            "stream-limit-observation title=${titleId ?: "-"} imdb=${imdbId ?: "-"} providers=${providers.size}",
+            "stream-limit-observation title=${titleId ?: "-"} imdb=${imdbId ?: "-"} " +
+                "type=${resourceType ?: "-"} providers=${providers.size} skipped=${skipped.size}" +
+
+                (if (providersOmitted > 0) " providersOmitted=$providersOmitted" else "") +
+                (if (skippedOmitted > 0) " skippedOmitted=$skippedOmitted" else ""),
         )
         for (p in providers) {
             val state = when (p.state) {
@@ -69,6 +87,7 @@ data class ProviderResolutionObservation(
                 .append("  addon=").append(p.addonId)
                 .append(" manifest=").append(p.manifestId ?: "-")
                 .append(" name=").append(p.displayName)
+                .append(" wire=").append(p.wireId ?: "-")
                 .append(" state=").append(state)
             val guard = (p.state as? ProviderResolutionState.Failed)?.guard
             guard?.let { line.append(" guard=").append(it.name) }
@@ -78,10 +97,42 @@ data class ProviderResolutionObservation(
             p.rejectedCount?.let { line.append(" rejected=").append(it) }
             add(line.toString())
         }
+        for (s in skipped) {
+            add("  skip addon=${s.addonId} reason=${s.reason}")
+        }
     }
 
     companion object {
         const val MAX_PROVIDERS = 64
+
+        fun bounded(
+            titleId: String?,
+            imdbId: String?,
+            providers: List<ProviderObservationEntry>,
+            resourceType: String? = null,
+            skipped: List<ProviderSkipEntry> = emptyList(),
+        ): ProviderResolutionObservation {
+            val boundedProviders = providers.take(MAX_PROVIDERS)
+            val boundedSkipped = skipped.take(MAX_PROVIDERS)
+            return ProviderResolutionObservation(
+                titleId = titleId,
+                imdbId = imdbId,
+                providers = boundedProviders,
+                resourceType = resourceType,
+                skipped = boundedSkipped,
+                providersOmitted = providers.size - boundedProviders.size,
+                skippedOmitted = skipped.size - boundedSkipped.size,
+            )
+        }
+    }
+}
+
+data class ProviderSkipEntry(
+    val addonId: String,
+    val reason: String,
+) {
+    init {
+        require(reason.isNotBlank()) { "skip reason must not be blank" }
     }
 }
 
@@ -90,6 +141,8 @@ data class ProviderObservationEntry(
     val manifestId: String?,
     val displayName: String,
     val state: ProviderResolutionState,
+
+    val wireId: String? = null,
     val bytesRead: Long? = null,
     val streamArrayCount: Int? = null,
     val acceptedCount: Int? = null,
@@ -137,6 +190,28 @@ data class ProviderObservationEntry(
         }
 
         const val MAX_LABEL_CHARS = 64
+
+        fun safeWireId(raw: String?): String? {
+            if (raw == null) return null
+            val cleaned = raw.map { c ->
+                when {
+                    c.isLetterOrDigit() || c == ':' || c == '-' || c == '_' || c == '.' -> c
+                    else -> ' '
+                }
+            }.joinToString("")
+                .split(' ')
+                .filter { word ->
+                    word.isNotBlank() &&
+                        word.lowercase() !in DENIED_WORDS &&
+                        !IPV4.matches(word) &&
+                        !HEX_TOKEN.matches(word)
+                }
+                .joinToString(":")
+                .take(MAX_WIRE_ID_CHARS)
+            return cleaned.ifEmpty { null }
+        }
+
+        const val MAX_WIRE_ID_CHARS = 96
     }
 }
 
@@ -156,6 +231,9 @@ class AddonCandidateResolver(
     private val providerTimeoutMs: Long = 10_000,
 
     private val episodeAddress: EpisodeAddress? = null,
+
+    private val aliasCompletion: dev.infusion.core.domain.metadata.CanonicalAliasCompletion =
+        dev.infusion.core.domain.metadata.CanonicalAliasCompletion.NONE,
 ) : CandidateResolverPort {
 
     private val _providerStates = MutableStateFlow<Map<String, ProviderResolutionState>>(emptyMap())
@@ -170,26 +248,51 @@ class AddonCandidateResolver(
         send(ResolutionPhase.Loading)
 
         val runtimes = registry.runtimesFor(viewer, primary)
-        val title = lookup.byId(titleId)
-        val type = titleType(title?.kind)
-        val titleAvailability = availabilityStore.byTitle(titleId)
 
-        val providers = LinkedHashMap<String, Pair<AddonRuntimeDescriptor, String>>()
-        for (runtime in runtimes) {
-            if (type !in runtime.streamTypes) continue
-            val nativeId = ownedAvailabilityId(runtime, titleAvailability)
-                ?: episodeStreamIdFor(runtime, title, titleAvailability)
-                ?: showEpisodeStreamIdFor(runtime, title, episodeAddress)
-                ?: rootExternalStreamIdFor(runtime, title, type)
-                ?: continue
-            if (nativeId.isBlank()) continue
-            providers[runtime.addonId] = runtime to nativeId
+        val completedTitles = LinkedHashMap<TitleId, dev.infusion.core.model.Title>()
+        fun titleAnswering(id: TitleId): dev.infusion.core.model.Title? =
+            completedTitles[id] ?: lookup.byId(id)
+
+        var title = titleAnswering(titleId)
+        var type = requestType(title, episodeAddress)
+        val titleAvailability = availabilityStore.byTitle(titleId)
+        var selection = selectProviders(runtimes, type, title, titleAvailability, episodeAddress, ::titleAnswering)
+
+        if (selection.aliasShapedSkip) {
+            val addressed = aliasAddressTitle(title, episodeAddress, ::titleAnswering)
+            if (addressed != null && completable(addressed)) {
+
+                val completed = runCatching {
+                    kotlinx.coroutines.withTimeoutOrNull(providerTimeoutMs) {
+                        aliasCompletion.complete(addressed)
+                    }
+                }.onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                }.getOrNull()
+                if (completed != null && completed.aliases != addressed.aliases) {
+                    completedTitles[completed.titleId] = completed
+                    title = titleAnswering(titleId)
+                    type = requestType(title, episodeAddress)
+                    selection = selectProviders(
+                        runtimes,
+                        type,
+                        title,
+                        titleAvailability,
+                        episodeAddress,
+                        ::titleAnswering,
+                    )
+                }
+            }
         }
+        val providers = selection.providers
+
         if (providers.isEmpty()) {
-            val observedNone = ProviderResolutionObservation(
+            val observedNone = ProviderResolutionObservation.bounded(
                 titleId = titleId.value.toString(),
-                imdbId = canonicalImdbId(title),
+                imdbId = canonicalImdbId(aliasAddressTitle(title, episodeAddress, ::titleAnswering)),
                 providers = emptyList(),
+                resourceType = type.wire,
+                skipped = selection.skipped,
             )
             _lastObservation.value = observedNone
 
@@ -246,16 +349,21 @@ class AddonCandidateResolver(
                     ?: ProviderObservationEntry.safeLabel(runtime.addonId)
                     ?: "addon",
                 state = batch.state,
+                wireId = ProviderObservationEntry.safeWireId(provider.second),
                 bytesRead = batch.bytesRead,
                 streamArrayCount = batch.streamArrayCount,
                 acceptedCount = batch.acceptedCount,
                 rejectedCount = batch.rejectedCount,
             )
         }
-        _lastObservation.value = ProviderResolutionObservation(
+        _lastObservation.value = ProviderResolutionObservation.bounded(
             titleId = titleId.value.toString(),
-            imdbId = canonicalImdbId(title),
+            imdbId = canonicalImdbId(aliasAddressTitle(title, episodeAddress, ::titleAnswering)),
             providers = providersObserved,
+            resourceType = type.wire,
+            skipped = selection.skipped.filter { skip ->
+                providersObserved.none { it.addonId == (ProviderObservationEntry.safeLabel(skip.addonId) ?: "addon") }
+            },
         )
 
         if (all.isEmpty()) {
@@ -335,6 +443,85 @@ class AddonCandidateResolver(
         val acc = LinkedHashSet<ProviderNotice>()
         for (slot in slots) if (slot != null) acc.addAll(slot.second.notices)
         return acc.toList()
+    }
+
+    private data class ProviderSelection(
+        val providers: LinkedHashMap<String, Pair<AddonRuntimeDescriptor, String>>,
+        val aliasShapedSkip: Boolean = false,
+
+        val skipped: List<ProviderSkipEntry> = emptyList(),
+    )
+
+    private fun selectProviders(
+        runtimes: List<AddonRuntimeDescriptor>,
+        type: StremioContentType,
+        title: dev.infusion.core.model.Title?,
+        titleAvailability: List<dev.infusion.core.model.Availability>,
+        episodeAddress: EpisodeAddress?,
+        titleOf: (TitleId) -> dev.infusion.core.model.Title? = lookup::byId,
+    ): ProviderSelection {
+        val providers = LinkedHashMap<String, Pair<AddonRuntimeDescriptor, String>>()
+        var aliasShapedSkip = false
+        val skipped = ArrayList<ProviderSkipEntry>()
+        fun skippedProvider(runtime: AddonRuntimeDescriptor, reason: String) {
+            skipped += ProviderSkipEntry(
+                ProviderObservationEntry.safeLabel(runtime.addonId) ?: "addon",
+                reason,
+            )
+        }
+        val addressed = aliasAddressTitle(title, episodeAddress, titleOf)
+        for (runtime in runtimes) {
+            if (type !in runtime.streamTypes) {
+
+                skippedProvider(runtime, SKIP_NOT_CAPABLE)
+                continue
+            }
+            val nativeId = ownedAvailabilityId(runtime, titleAvailability)
+                ?: episodeStreamIdFor(runtime, title, titleAvailability)
+                ?: showEpisodeStreamIdFor(runtime, title, episodeAddress, titleOf)
+                ?: rootExternalStreamIdFor(runtime, title, type)
+            if (nativeId != null && nativeId.isNotBlank()) {
+                providers[runtime.addonId] = runtime to nativeId
+                continue
+            }
+            if (aliasShapedBlocked(runtime, addressed)) {
+                aliasShapedSkip = true
+                skippedProvider(runtime, SKIP_NAMESPACE_MISMATCH)
+            } else {
+                skippedProvider(runtime, SKIP_NO_ADDRESSED_ID)
+            }
+        }
+        return ProviderSelection(providers, aliasShapedSkip, skipped)
+    }
+
+    private fun aliasAddressTitle(
+        title: dev.infusion.core.model.Title?,
+        address: EpisodeAddress?,
+        titleOf: (TitleId) -> dev.infusion.core.model.Title? = lookup::byId,
+    ): dev.infusion.core.model.Title? = when {
+        title?.kind == dev.infusion.core.model.TitleKind.EPISODE ->
+            address?.seriesTitleId?.let { titleOf(it) }
+        title == null && address?.seriesTitleId != null -> titleOf(address.seriesTitleId)
+        else -> title
+    }
+
+    private fun aliasShapedBlocked(
+        runtime: AddonRuntimeDescriptor,
+        addressed: dev.infusion.core.model.Title?,
+    ): Boolean {
+        if (runtime.streamIdPrefixes.isEmpty()) return false
+        val wireIds = addressed?.aliases
+            ?.mapNotNull { alias -> alias.stremioWireId() }
+            ?.distinct()
+            .orEmpty()
+        if (wireIds.isEmpty()) return false
+        return wireIds.none { wire -> runtime.streamIdPrefixes.any { prefix -> wire.startsWith(prefix) } }
+    }
+
+    private fun completable(addressed: dev.infusion.core.model.Title): Boolean {
+        if (addressed.aliases.isEmpty()) return false
+        val authorities = addressed.aliases.map { it.authority.lowercase() }.toSet()
+        return METADATA_AUTHORITIES.any { it !in authorities }
     }
 
     private suspend fun resolveProvider(
@@ -469,12 +656,13 @@ class AddonCandidateResolver(
         runtime: AddonRuntimeDescriptor,
         title: dev.infusion.core.model.Title?,
         address: EpisodeAddress?,
+        titleOf: (TitleId) -> dev.infusion.core.model.Title? = lookup::byId,
     ): String? {
         val coordinates = address ?: return null
 
         val show = when (title?.kind) {
             dev.infusion.core.model.TitleKind.SERIES, dev.infusion.core.model.TitleKind.SEASON -> title
-            else -> address.seriesTitleId?.let { lookup.byId(it) }
+            else -> address.seriesTitleId?.let { titleOf(it) }
         } ?: return null
         if (show.kind != dev.infusion.core.model.TitleKind.SERIES &&
             show.kind != dev.infusion.core.model.TitleKind.SEASON
@@ -500,14 +688,10 @@ class AddonCandidateResolver(
         return externalStreamIdFor(runtime, title, type)
     }
 
-    private fun titleType(kind: dev.infusion.core.model.TitleKind?): StremioContentType = when (kind) {
-        dev.infusion.core.model.TitleKind.MOVIE -> StremioContentType.MOVIE
-        dev.infusion.core.model.TitleKind.SERIES,
-        dev.infusion.core.model.TitleKind.SEASON,
-        dev.infusion.core.model.TitleKind.EPISODE,
-        -> StremioContentType.SERIES
-        null, dev.infusion.core.model.TitleKind.CLIP -> StremioContentType.MOVIE
-    }
+    private fun requestType(
+        title: dev.infusion.core.model.Title?,
+        address: EpisodeAddress?,
+    ): StremioContentType = StremioRouteType.of(title?.kind, address)
 
     private companion object {
 
@@ -533,5 +717,11 @@ class AddonCandidateResolver(
             "concurrency_exceeded",
             "cancelled",
         )
+
+        val METADATA_AUTHORITIES = setOf("imdb", "tmdb", "tvdb")
+
+        const val SKIP_NOT_CAPABLE = "not-capable"
+        const val SKIP_NO_ADDRESSED_ID = "no-addressed-id"
+        const val SKIP_NAMESPACE_MISMATCH = "namespace-mismatch"
     }
 }

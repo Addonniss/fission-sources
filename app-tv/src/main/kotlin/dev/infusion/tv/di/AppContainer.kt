@@ -120,6 +120,10 @@ class AppContainer(
     private val mdblistHubSeam: dev.infusion.core.network.HardenedHttpClient? = null,
 
     private val mdblistClientIdSeam: String? = null,
+
+    private val wetrakrHubSeam: dev.infusion.core.network.HardenedHttpClient? = null,
+
+    private val wetrakrClientIdSeam: String? = null,
 ) {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -1692,6 +1696,33 @@ class AppContainer(
         )
     }
 
+    val wetrakrTracking: dev.infusion.tv.tracking.WeTrakrTrackingGraph by lazy {
+        dev.infusion.tv.tracking.WeTrakrTrackingGraph(
+            scope = appScope,
+            profileScope = profileScope,
+            credentialStore = trackingCredentialStore,
+            outbox = watchOutbox,
+            resolver = trackingMediaResolver,
+            trackingServicePort = trackingPort,
+            watchTrackingSelectionGate = watchTrackingSelectionGate,
+            preferencesStore = trackingPreferencesStore,
+            coordinator = coordinator,
+            inboundIdentity = dev.infusion.core.database.tracking.RoomTrackingInboundIdentity(
+                titleDao = db.titleDao(),
+                externalIdDao = db.externalIdDao(),
+                supersession = titleSupersession,
+                editionDao = db.editionDao(),
+            ),
+            runtimeSource = trackingRuntimeSource,
+            inboundCursorStore = trackingInboundCursorStore,
+            watchedCacheStore = trackingWatchedCacheStore,
+            inboundIdentityCompletion = trackingInboundIdentityCompletion,
+            clientId = wetrakrClientIdSeam ?: dev.infusion.tv.tracking.GeneratedWeTrakrCredential.clientId(),
+            appVersion = appVersionLabel,
+            hub = wetrakrHubSeam ?: dev.infusion.core.network.OkHttpHardenedClient(),
+        )
+    }
+
     val trackingGraphs: dev.infusion.tv.tracking.TrackingGraphs by lazy {
         dev.infusion.tv.tracking.TrackingGraphs(
             scope = appScope,
@@ -1701,6 +1732,7 @@ class AppContainer(
             simkl = simklTracking,
             trakt = traktTracking,
             mdblist = mdblistTracking,
+            wetrakr = wetrakrTracking,
         )
     }
 
@@ -1751,9 +1783,8 @@ class AppContainer(
             identityCompletion = watchlistIdentityCompletion,
             memberships = { membershipsByProvider() },
             activeTracker = { trackingPreferencesStore.current().selectedTrackerId },
-            accountRef = { providerId ->
-                runCatching { trackingCredentialStore.credentials(providerId)?.accountLabel }.getOrNull()
-            },
+
+            accountRef = ::watchlistAccountIdentity,
 
             isResumeEligible = { unit -> cardWatchedState.value.isInProgress(unit) },
             isWatchedUnit = { unit -> cardWatchedState.value.isWatched(unit) },
@@ -1784,6 +1815,8 @@ class AppContainer(
             traktTracking.provider.providerId to traktTracking.personalRatings,
             simklTracking.provider.providerId to simklTracking.personalRatings,
             mdblistTracking.provider.providerId to mdblistTracking.personalRatings,
+
+            wetrakrTracking.provider.providerId to wetrakrTracking.personalRatings,
         )
 
     val personalRatingsRevision: kotlinx.coroutines.flow.Flow<Long> =
@@ -1794,6 +1827,8 @@ class AppContainer(
             traktTracking.provider.providerId to traktTracking.watchlistMembership,
             simklTracking.provider.providerId to simklTracking.watchlistMembership,
             mdblistTracking.provider.providerId to mdblistTracking.watchlistMembership,
+
+            wetrakrTracking.provider.providerId to wetrakrTracking.watchlistMembership,
         )
 
     val cardWatchlistMembership: Flow<dev.infusion.tv.ui.presentation.CardWatchlistMembership> =
@@ -1808,8 +1843,13 @@ class AppContainer(
             }
             .distinctUntilChanged()
 
+    private fun watchlistAccountIdentity(providerId: String): String? = runCatching {
+        val stored = trackingCredentialStore.credentials(providerId)
+        stored?.accountId ?: stored?.accountLabel
+    }.getOrNull()
+
     private fun activeTrackingAccountRef(providerId: String): String? =
-        runCatching { trackingCredentialStore.credentials(providerId)?.accountLabel }.getOrNull()
+        watchlistAccountIdentity(providerId)
 
     val cardAvailability: Flow<dev.infusion.tv.ui.presentation.CardAvailability> =
         combine(
@@ -1941,6 +1981,10 @@ class AppContainer(
                 }
                 runCatching {
                     trackingCredentialStore.clearProfile(traktTracking.provider.providerId, profileId)
+                }
+
+                runCatching {
+                    trackingCredentialStore.clearProfile(wetrakrTracking.provider.providerId, profileId)
                 }
 
                 runCatching {
@@ -2449,6 +2493,18 @@ class AppContainer(
         )
     }
 
+    private val canonicalAliasCompletion: dev.infusion.core.domain.metadata.CanonicalAliasCompletion by lazy {
+        dev.infusion.core.metadata.DefaultCanonicalAliasCompletion(
+            provider = metadataProvider,
+            store = dev.infusion.core.database.store.RoomMediaIdentityStore(
+                externalIdDao = db.externalIdDao(),
+                titleDao = db.titleDao(),
+                transaction = { block -> db.runInTransaction(block) },
+            ),
+            locale = metadataLocale(),
+        )
+    }
+
     val seriesLandscapeArtwork: dev.infusion.feature.vertical.artwork.SeriesLandscapeArtwork by lazy {
         dev.infusion.feature.vertical.artwork.SeriesLandscapeArtworkStateHolder(
             resolver = mediaIdentityResolver,
@@ -2851,11 +2907,24 @@ class AppContainer(
                         jellyfinGraph.transportFor(candidate, lineage)
                     addonManager.installedAddonIds().contains(candidate.sourceId.value.toString()) -> {
 
+                        val subtitleRoute = dev.infusion.source.aggregation.resolve.StremioRouteType
+                            .ofPlaybackAddress(watchKey)
                         val mergedCandidate = try {
-                            addonSubtitleMerger.mergeStandaloneSubtitles(candidate)
+                            addonSubtitleMerger.mergeStandaloneSubtitles(
+                                candidate = candidate,
+                                type = subtitleRoute,
+                            )
                         } catch (_: Exception) {
                             candidate
                         }
+
+                        android.util.Log.i(
+                            "INFUSION-SUBS",
+                            "type=${subtitleRoute.wire} " +
+                                "id=${dev.infusion.source.aggregation.resolve.ProviderObservationEntry.safeWireId(candidate.nativeItemId.nativeId) ?: "-"} " +
+                                "embedded=${candidate.embeddedSubtitles.size} " +
+                                "merged=${mergedCandidate.embeddedSubtitles.size}",
+                        )
 
                         activeAttemptRoute?.close()
                         activeAttemptRoute = registerAddonMediaHosts(
@@ -3192,6 +3261,8 @@ class AppContainer(
             dev.infusion.core.domain.publist.PublicListProvider.TRAKT.id to traktTracking.publicLists,
             dev.infusion.core.domain.publist.PublicListProvider.MDBLIST.id to mdblistTracking.publicLists,
             dev.infusion.core.domain.publist.PublicListProvider.SIMKL.id to simklTracking.publicLists,
+
+            dev.infusion.core.domain.publist.PublicListProvider.WETRAKR.id to wetrakrTracking.publicLists,
         )
     }
 
@@ -3200,6 +3271,7 @@ class AppContainer(
             dev.infusion.core.domain.publist.PublicListProvider.TRAKT.id to traktTracking.publicLists,
             dev.infusion.core.domain.publist.PublicListProvider.MDBLIST.id to mdblistTracking.publicLists,
             dev.infusion.core.domain.publist.PublicListProvider.SIMKL.id to simklTracking.publicLists,
+            dev.infusion.core.domain.publist.PublicListProvider.WETRAKR.id to wetrakrTracking.publicLists,
         )
     }
 
@@ -3241,6 +3313,8 @@ class AppContainer(
                 dev.infusion.source.tmdb.TmdbBrowseProvider.PROVIDER to tmdbBrowseProvider,
                 dev.infusion.core.domain.publist.PublicListProvider.TRAKT.id to publicListArm,
                 dev.infusion.core.domain.publist.PublicListProvider.MDBLIST.id to publicListArm,
+
+                dev.infusion.core.domain.publist.PublicListProvider.WETRAKR.id to publicListArm,
                 dev.infusion.source.aggregation.collections.AddonCollectionRowSource.PROVIDER to addonArm,
             ),
             cards = sourceRowCards,
@@ -3925,6 +3999,10 @@ class AppContainer(
                 homeCwArtwork(state)
             },
 
+            serverArtworkFor = { item ->
+                homeCwServerArtwork(item)
+            },
+
             jellyfinSourceId = jellyfinSource?.sourceId,
 
             trace = { line -> android.util.Log.i("INFUSION-CW", line) },
@@ -3968,9 +4046,15 @@ class AppContainer(
     private suspend fun cwCanonicalArtworkRef(
         state: dev.infusion.core.model.watch.WatchState,
         titleId: dev.infusion.core.model.TitleId,
+    ): dev.infusion.core.model.MediaArtworkRef? =
+        cwCanonicalTitleArtworkRef(titleId, episode = state.watchKey.isEpisode)
+
+    private suspend fun cwCanonicalTitleArtworkRef(
+        titleId: dev.infusion.core.model.TitleId,
+        episode: Boolean,
     ): dev.infusion.core.model.MediaArtworkRef? {
         val locale = metadataLocale()
-        val type = if (state.watchKey.isEpisode) {
+        val type = if (episode) {
             dev.infusion.core.model.metadata.MediaType.SHOW
         } else {
             dev.infusion.core.model.metadata.MediaType.MOVIE
@@ -4042,7 +4126,7 @@ class AppContainer(
     }
 
     private fun cwDrawnSlot(
-        kind: dev.infusion.core.model.TitleKind,
+        kind: dev.infusion.core.model.TitleKind?,
         ref: dev.infusion.core.model.MediaArtworkRef,
         policy: dev.infusion.tv.ui.presentation.ContentCardPresentation,
     ): dev.infusion.core.model.MediaArtworkRef? =
@@ -4053,7 +4137,7 @@ class AppContainer(
         }
 
     private fun cwCardArtworkTarget(
-        kind: dev.infusion.core.model.TitleKind,
+        kind: dev.infusion.core.model.TitleKind?,
         policy: dev.infusion.tv.ui.presentation.ContentCardPresentation,
     ): androidx.compose.ui.unit.IntSize =
         dev.infusion.tv.ui.presentation.homeCwArtworkTargetPx(
@@ -4095,28 +4179,33 @@ class AppContainer(
                 },
 
                 parentShowRef = { cwParentShowBackdropRef(state) },
-                draws = { ref ->
-                    val slot = cwDrawnSlot(kind, ref, presentation)
-
-                    val cardRole = ref.policy == dev.infusion.core.model.ArtworkPolicy.BACKDROP
-                    slot != null &&
-                        artworkBytesSource.bytes(
-                            dev.infusion.core.artworkimage.ArtworkRequest(
-                                locator = slot.locator,
-                                policy = slot.policy,
-                                targetWidthPx = cardTarget.width,
-                                targetHeightPx = cardTarget.height,
-                                retainsPreviousSuccess = if (cardRole) false else true,
-                                presentationRole = if (cardRole) {
-                                    dev.infusion.core.model.ArtworkPresentationRole.LANDSCAPE_CARD
-                                } else {
-                                    dev.infusion.core.model.ArtworkPresentationRole.BACKGROUND
-                                },
-                            ),
-                        ) != null
-                },
+                draws = cwArtworkDrawsProbe(kind, presentation, cardTarget),
             )
         }
+    }
+
+    private fun cwArtworkDrawsProbe(
+        kind: dev.infusion.core.model.TitleKind?,
+        presentation: dev.infusion.tv.ui.presentation.ContentCardPresentation,
+        cardTarget: androidx.compose.ui.unit.IntSize,
+    ): suspend (dev.infusion.core.model.MediaArtworkRef) -> Boolean = { ref ->
+        val slot = cwDrawnSlot(kind, ref, presentation)
+        val cardRole = ref.policy == dev.infusion.core.model.ArtworkPolicy.BACKDROP
+        slot != null &&
+            artworkBytesSource.bytes(
+                dev.infusion.core.artworkimage.ArtworkRequest(
+                    locator = slot.locator,
+                    policy = slot.policy,
+                    targetWidthPx = cardTarget.width,
+                    targetHeightPx = cardTarget.height,
+                    retainsPreviousSuccess = if (cardRole) false else true,
+                    presentationRole = if (cardRole) {
+                        dev.infusion.core.model.ArtworkPresentationRole.LANDSCAPE_CARD
+                    } else {
+                        dev.infusion.core.model.ArtworkPresentationRole.BACKGROUND
+                    },
+                ),
+            ) != null
     }
 
     private suspend fun cwParentShowBackdropRef(
@@ -4128,6 +4217,57 @@ class AppContainer(
         val cardTitle = runCatching {
             homeCwBaseCatalog().observeTitleDetails(seriesId).firstOrNull()?.title?.displayTitle
         }.getOrNull()
+        return parentShowBackdropArtworkRef(seriesId, cardTitle)
+    }
+
+    private suspend fun homeCwServerArtwork(
+        item: dev.infusion.feature.vertical.jellyfin.JellyfinTabRowItem,
+    ): dev.infusion.core.model.MediaArtworkRef? = withContext(Dispatchers.IO) {
+
+        val presentation = appearanceStateHolder.preferences.value.toContentCardPresentation()
+        val kind = item.kind
+        val cardTarget = cwCardArtworkTarget(kind, presentation)
+        dev.infusion.feature.vertical.home.selectCwArtwork(
+            ownerRefs = serverCwOwnerArtworkRefs(item, presentation),
+            canonicalRef = { serverCwCanonicalArtworkRef(item) },
+            parentShowRef = { serverCwParentShowBackdropRef(item) },
+            draws = cwArtworkDrawsProbe(kind, presentation, cardTarget),
+        )
+    }
+
+    private fun serverCwOwnerArtworkRefs(
+        item: dev.infusion.feature.vertical.jellyfin.JellyfinTabRowItem,
+        presentation: dev.infusion.tv.ui.presentation.ContentCardPresentation,
+    ): List<dev.infusion.core.model.MediaArtworkRef> =
+        dev.infusion.feature.vertical.home.serverCwOwnerArtworkRefs(
+            nativeItemId = item.nativeItemId,
+            kind = item.kind,
+            statedImageTypes = item.imageTypes,
+            drawsLandscape = presentation.artworkSourceFor(item.kind) ==
+                dev.infusion.tv.ui.presentation.ContentCardArtworkSource.LANDSCAPE,
+        )
+
+    private suspend fun serverCwCanonicalArtworkRef(
+        item: dev.infusion.feature.vertical.jellyfin.JellyfinTabRowItem,
+    ): dev.infusion.core.model.MediaArtworkRef? {
+        if (item.kind == dev.infusion.core.model.TitleKind.EPISODE) {
+            val seriesId = item.canonicalOrDeterministicSeriesTitleId ?: return null
+            val seasonNumber = item.seasonNumber ?: return null
+            val episodeNumber = item.episodeNumber ?: return null
+            return canonicalEpisodeStillRef(seriesId, seasonNumber, episodeNumber)
+        }
+        val titleId = item.canonicalOrDeterministicTitleId ?: return null
+        return cwCanonicalTitleArtworkRef(titleId, episode = false)
+    }
+
+    private suspend fun serverCwParentShowBackdropRef(
+        item: dev.infusion.feature.vertical.jellyfin.JellyfinTabRowItem,
+    ): dev.infusion.core.model.MediaArtworkRef? {
+        if (item.kind != dev.infusion.core.model.TitleKind.EPISODE) return null
+        val seriesId = item.canonicalOrDeterministicSeriesTitleId ?: return null
+        val cardTitle = runCatching {
+            homeCwBaseCatalog().observeTitleDetails(seriesId).firstOrNull()?.title?.displayTitle
+        }.getOrNull() ?: item.seriesName
         return parentShowBackdropArtworkRef(seriesId, cardTitle)
     }
 
@@ -4889,11 +5029,18 @@ class AppContainer(
                     seriesTitleId = it.seriesTitleId,
                 )
             },
+
+            aliasCompletion = canonicalAliasCompletion,
         )
 
         appScope.launch {
             addonResolver.lastObservation.collect { obs ->
-                if (obs != null) streamLimitObservationJournal.record(obs)
+                if (obs != null) {
+                    streamLimitObservationJournal.record(obs)
+                    obs.toLogLines().forEach { line ->
+                        android.util.Log.i("INFUSION-RESOLVE", line)
+                    }
+                }
             }
         }
         return addonResolver

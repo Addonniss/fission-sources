@@ -37,16 +37,7 @@ class CandidateRefresher(
         val nativeId = candidate.nativeItemId.nativeId
 
         val kind = lookup.byId(candidate.titleId)?.kind
-        val type = when (kind) {
-            dev.infusion.core.model.TitleKind.MOVIE ->
-                dev.infusion.source.stremio.policy.StremioContentType.MOVIE
-            dev.infusion.core.model.TitleKind.SERIES,
-            dev.infusion.core.model.TitleKind.SEASON,
-            dev.infusion.core.model.TitleKind.EPISODE,
-            -> dev.infusion.source.stremio.policy.StremioContentType.SERIES
-            null, dev.infusion.core.model.TitleKind.CLIP ->
-                dev.infusion.source.stremio.policy.StremioContentType.MOVIE
-        }
+        val type = StremioRouteType.ofCanonicalKind(kind)
 
         val result = kotlinx.coroutines.withTimeoutOrNull(providerTimeoutMs) {
             streamRepository.streamsFrom(runtime.addonId, type, nativeId)

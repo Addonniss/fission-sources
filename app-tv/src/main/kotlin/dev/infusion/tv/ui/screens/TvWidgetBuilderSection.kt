@@ -418,9 +418,9 @@ internal fun WidgetBuilderSectionContent(
             Text("Widget Builder", style = InfusionTvScaleCalibration.Type.Headline)
             Text(
                 "Create a Home row from an installed add-on's catalog, or from one list of " +
-                    "Trakt / MDBList / Simkl. Public routes need no account; a provider's " +
-                    "account routes (for example My Lists) appear once that account is " +
-                    "connected. Each widget is an independent row you can move or delete " +
+                    "Trakt / MDBList / Simkl / WeTrakr. Public routes need no account; a " +
+                    "provider's account routes (for example My Lists) appear once that account " +
+                    "is connected. Each widget is an independent row you can move or delete " +
                     "without affecting the source.",
                 style = InfusionTvScaleCalibration.Type.SettingsContent,
             )

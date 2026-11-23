@@ -1,7 +1,9 @@
 package dev.infusion.feature.vertical.home
 
+import dev.infusion.core.model.ArtworkLocator
 import dev.infusion.core.model.ArtworkPolicy
 import dev.infusion.core.model.MediaArtworkRef
+import dev.infusion.core.model.TitleKind
 import dev.infusion.core.model.metadata.ImageRef
 
 suspend fun selectCwArtwork(
@@ -53,4 +55,32 @@ fun canonicalCwStillRef(still: ImageRef?): MediaArtworkRef? = still?.let { image
         path = image.path,
         policy = ArtworkPolicy.STILL,
     )
+}
+
+fun serverCwOwnerArtworkRefs(
+    nativeItemId: String?,
+    kind: TitleKind?,
+    statedImageTypes: Set<String>,
+    drawsLandscape: Boolean,
+): List<MediaArtworkRef> {
+    val native = nativeItemId?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
+    return when {
+        kind == TitleKind.EPISODE ->
+            listOfNotNull(
+                episodeCwStillRef(native)
+                    ?.takeIf { ArtworkLocator.DEFAULT_CATALOG_TYPE in statedImageTypes },
+            )
+        drawsLandscape ->
+            listOfNotNull(
+                MediaArtworkRef
+                    .catalogTyped(native, ArtworkLocator.CATALOG_BACKDROP_TYPE)
+                    .takeIf { ArtworkLocator.CATALOG_BACKDROP_TYPE in statedImageTypes },
+            )
+        else ->
+            listOfNotNull(
+                MediaArtworkRef
+                    .catalogTyped(native, ArtworkLocator.DEFAULT_CATALOG_TYPE)
+                    .takeIf { ArtworkLocator.DEFAULT_CATALOG_TYPE in statedImageTypes },
+            )
+    }
 }

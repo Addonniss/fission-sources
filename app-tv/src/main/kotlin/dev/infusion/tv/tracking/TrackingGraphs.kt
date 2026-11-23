@@ -19,9 +19,11 @@ class TrackingGraphs(
     val simkl: SimklTrackingGraph,
     val trakt: TraktTrackingGraph,
     val mdblist: MDBListTrackingGraph,
+    val wetrakr: WeTrakrTrackingGraph,
 ) {
 
-    private val graphs: List<TrackingProviderGraph> = listOf(simkl.graph, trakt.graph, mdblist.graph)
+    private val graphs: List<TrackingProviderGraph> =
+        listOf(simkl.graph, trakt.graph, mdblist.graph, wetrakr.graph)
 
     private val reviewSources: List<Pair<TrackingProviderGraph, dev.infusion.core.domain.tracking.TrackingReviewReadPort>> =
         graphs.mapNotNull { graph -> graph.reviewSource?.let { source -> graph to source } }
@@ -41,6 +43,7 @@ class TrackingGraphs(
             put(simkl.provider.providerId, simkl.watchedHistory)
             put(trakt.provider.providerId, trakt.watchedHistory)
             put(mdblist.provider.providerId, mdblist.watchedHistory)
+            put(wetrakr.provider.providerId, wetrakr.watchedHistory)
         }
 
     fun bindResumeResetGuard(

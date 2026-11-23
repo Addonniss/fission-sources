@@ -2,16 +2,12 @@ package dev.infusion.source.aggregation.subtitles
 
 import dev.infusion.core.model.EmbeddedSubtitle
 import dev.infusion.core.model.PlayableCandidate
-import dev.infusion.core.model.TitleKind
-import dev.infusion.source.aggregation.CanonicalTitleLookup
 import dev.infusion.source.aggregation.resource.AddonSubtitleRepository
 import dev.infusion.source.aggregation.resource.ProviderResourceState
 import dev.infusion.source.aggregation.resource.SubtitleBatch
 import dev.infusion.source.stremio.policy.StremioContentType
 import dev.infusion.source.stremio.wire.StremioSubtitle
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 data class MergedSubtitle(
@@ -24,24 +20,21 @@ data class MergedSubtitle(
 
 class AddonSubtitleMerger(
     private val subtitleRepository: AddonSubtitleRepository,
-    private val lookup: CanonicalTitleLookup,
     private val providerTimeoutMs: Long = DEFAULT_DISCOVERY_TIMEOUT_MS,
 ) {
 
     suspend fun mergeStandaloneSubtitles(
         candidate: PlayableCandidate,
-        type: StremioContentType? = null,
+        type: StremioContentType,
     ): PlayableCandidate {
         val merged = runCatching {
-
-            val contentType = type ?: withContext(Dispatchers.IO) { contentTypeFor(candidate) }
             val id = candidate.nativeItemId.nativeId
 
             val delivered = mutableListOf<SubtitleBatch>()
             withTimeoutOrNull(providerTimeoutMs) {
-                subtitleRepository.subtitles(contentType, id).collect { delivered += it }
+                subtitleRepository.subtitles(type, id).collect { delivered += it }
             }
-            mergeBatches(candidate, completedProviders(contentType, id, delivered))
+            mergeBatches(candidate, completedProviders(type, id, delivered))
         }.getOrElse { candidate.embeddedSubtitles }
         return if (merged == candidate.embeddedSubtitles) candidate else candidate.copy(embeddedSubtitles = merged)
     }
@@ -87,13 +80,6 @@ class AddonSubtitleMerger(
             format = format,
             sourceName = sourceName,
         )
-
-    private fun contentTypeFor(candidate: PlayableCandidate): StremioContentType =
-        when (lookup.byId(candidate.titleId)?.kind) {
-            TitleKind.MOVIE -> StremioContentType.MOVIE
-            TitleKind.SERIES, TitleKind.SEASON, TitleKind.EPISODE -> StremioContentType.SERIES
-            null, TitleKind.CLIP -> StremioContentType.MOVIE
-        }
 
     companion object {
 

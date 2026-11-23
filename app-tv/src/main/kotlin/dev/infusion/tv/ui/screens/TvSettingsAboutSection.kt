@@ -157,7 +157,7 @@ internal val AboutServiceCredits: List<AboutCreditGroup> = listOf(
                     "affiliated with, or endorsed by, the Jellyfin project.",
             ),
             AboutCreditLine(
-                name = "Simkl, Trakt and MDBList",
+                name = "Trakt, Simkl, MDBList and WeTrakr",
                 detail = "optional watch-tracking accounts you connect yourself and can disconnect " +
                     "at any time. fission is not affiliated with, or endorsed by, any of them.",
             ),
