@@ -215,7 +215,7 @@ class SwrMetadataRepository(
         locale: MetadataLocale,
     ): MetadataResult<SeasonDetails> {
         val base = cacheKey(identity, locale)
-        val key = base?.let { "$it#s$seasonNumber" }
+        val key = base?.let { MetadataCacheKeys.season(identity, locale, seasonNumber) }
         val namespace = MetadataNamespaces.season(provider.providerId)
         val result = cachedOrLoad(
             namespace = namespace,
@@ -394,7 +394,7 @@ class SwrMetadataRepository(
         MetadataResult.Failure(MetadataFailureReason.NOT_FOUND, "no such metadata at the provider")
 
     private fun cacheKey(identity: MediaIdentity, locale: MetadataLocale): String? =
-        identity.cacheKey()?.let { "$it#${locale.tag}" }
+        MetadataCacheKeys.details(identity, locale)
 }
 
 class ResolvingMetadataRepository(

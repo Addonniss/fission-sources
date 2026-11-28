@@ -94,7 +94,7 @@ import dev.infusion.core.database.entity.WatchStateEntity
         HomePresentationPreferenceEntity::class,
         MetadataCacheEntity::class,
     ],
-    version = 25,
+    version = 26,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -168,6 +168,8 @@ abstract class InfusionDatabase : RoomDatabase() {
                     SpotlightSourceMigrations.MIGRATION_23_24,
 
                     WatchHistoryMigrations.MIGRATION_24_25,
+
+                    WatchHistoryMigrations.MIGRATION_25_26,
                 )
                 .build()
 

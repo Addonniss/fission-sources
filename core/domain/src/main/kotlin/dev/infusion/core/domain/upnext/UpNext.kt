@@ -150,6 +150,8 @@ data class UpNextCard(
     val trackerId: String? = null,
 
     val activityAt: Instant? = null,
+
+    val providerOrder: Int? = null,
 ) {
     val isLocal: Boolean get() = trackerId == null
 }
@@ -160,6 +162,11 @@ data class UpNextProjectionResult(
 ) {
     val isEmpty: Boolean get() = cards.isEmpty()
 }
+
+data class UpNextSeriesDecision(
+    val card: UpNextCard?,
+    val reason: UpNextUnresolvedReason? = null,
+)
 
 object UpNextProjection {
 
@@ -176,6 +183,10 @@ object UpNextProjection {
 
         val trackerBySeries = tracker.groupBy { it.seriesTitleId }.mapValues { (_, entries) -> entries.first() }
 
+        val trackerOrderBySeries = tracker.withIndex()
+            .groupBy({ (_, candidate) -> candidate.seriesTitleId }, { (index, _) -> index })
+            .mapValues { (_, indexes) -> indexes.first() }
+
         val seriesIds = LinkedHashSet<TitleId>()
         seriesIds += local.map { it.seriesTitleId }
         seriesIds += tracker.map { it.seriesTitleId }
@@ -183,30 +194,53 @@ object UpNextProjection {
         val cards = ArrayList<UpNextCard>()
         val unresolved = ArrayList<UpNextUnresolvedSeries>()
         for (seriesId in seriesIds) {
-            val evidence = localBySeries[seriesId]
-            val trackerCandidate = trackerBySeries[seriesId]
-            val localOutcome = evidence?.let { deriveLocal(it, today, now) }
-            val card = resolveSeries(evidence, trackerCandidate, localOutcome, today, now)
+            val decision = decideSeries(
+                evidence = localBySeries[seriesId],
+                candidate = trackerBySeries[seriesId],
+                today = today,
+                now = now,
+                providerOrder = trackerOrderBySeries[seriesId],
+            )
+            val card = decision.card
             if (card != null) {
                 cards += card
             } else {
                 unresolved += UpNextUnresolvedSeries(
                     seriesTitleId = seriesId,
-                    reason = (localOutcome as? LocalOutcome.Unresolved)?.reason
-
-                        ?: trackerCandidate?.takeIf { !it.isAiredPermitted(today, now) }
-                            ?.let { UpNextUnresolvedReason.NOT_YET_AIRED }
-                        ?: UpNextUnresolvedReason.NOT_ESTABLISHED,
+                    reason = decision.reason ?: UpNextUnresolvedReason.NOT_ESTABLISHED,
                 )
             }
         }
 
-        val ordered = cards.sortedWith(
-            compareByDescending<UpNextCard> { it.activityAt ?: Instant.EPOCH }
-                .thenBy { it.key },
-        )
-        return UpNextProjectionResult(cards = ordered, unresolved = unresolved)
+        return UpNextProjectionResult(cards = ordered(cards), unresolved = unresolved)
     }
+
+    fun decideSeries(
+        evidence: UpNextSeriesEvidence?,
+        candidate: UpNextTrackerCandidate?,
+        today: LocalDate,
+        now: Instant? = null,
+        providerOrder: Int? = null,
+    ): UpNextSeriesDecision {
+        val localOutcome = evidence?.let { deriveLocal(it, today, now) }
+        val card = resolveSeries(evidence, candidate, localOutcome, today, now, providerOrder)
+        val reason = if (card != null) {
+            null
+        } else {
+            (localOutcome as? LocalOutcome.Unresolved)?.reason
+
+                ?: candidate?.takeIf { !it.isAiredPermitted(today, now) }
+                    ?.let { UpNextUnresolvedReason.NOT_YET_AIRED }
+                ?: UpNextUnresolvedReason.NOT_ESTABLISHED
+        }
+        return UpNextSeriesDecision(card = card, reason = reason)
+    }
+
+    fun ordered(cards: List<UpNextCard>): List<UpNextCard> = cards.sortedWith(
+        compareByDescending<UpNextCard> { it.activityAt ?: Instant.EPOCH }
+            .thenBy { card -> if (card.activityAt == null) card.providerOrder ?: Int.MAX_VALUE else 0 }
+            .thenBy { it.key },
+    )
 
     private fun deriveLocal(evidence: UpNextSeriesEvidence, today: LocalDate, now: Instant?): LocalOutcome {
         if (evidence.episodes.isEmpty()) return LocalOutcome.Unresolved(UpNextUnresolvedReason.NOT_ESTABLISHED)
@@ -278,15 +312,18 @@ object UpNextProjection {
         localOutcome: LocalOutcome?,
         today: LocalDate,
         now: Instant?,
+        providerOrder: Int?,
     ): UpNextCard? = when {
         evidence == null ->
-            trackerCandidate?.takeIf { it.isLocallyUsable(null) && it.isAiredPermitted(today, now) }?.toCard()
+            trackerCandidate
+                ?.takeIf { it.isLocallyUsable(null) && it.isAiredPermitted(today, now) }
+                ?.toCard(providerOrder)
         localOutcome is LocalOutcome.Candidate -> localOutcome.card
         localOutcome is LocalOutcome.Unresolved &&
             localOutcome.reason == UpNextUnresolvedReason.UNFINISHED_LOCAL_EPISODE -> null
         else -> trackerCandidate
             ?.takeIf { it.isLocallyUsable(evidence) && it.isAiredPermitted(today, now) }
-            ?.toCard()
+            ?.toCard(providerOrder)
     }
 
     private fun UpNextTrackerCandidate.isAiredPermitted(today: LocalDate, now: Instant?): Boolean =
@@ -315,7 +352,7 @@ object UpNextProjection {
         return !blocked
     }
 
-    private fun UpNextTrackerCandidate.toCard(): UpNextCard = UpNextCard(
+    private fun UpNextTrackerCandidate.toCard(providerOrder: Int?): UpNextCard = UpNextCard(
         key = cardKey(seriesTitleId, seasonNumber, episodeNumber),
         seriesTitleId = seriesTitleId,
         seasonNumber = seasonNumber,
@@ -325,6 +362,7 @@ object UpNextProjection {
         seriesTitle = seriesTitle,
         trackerId = trackerId,
         activityAt = activityAt,
+        providerOrder = providerOrder,
     )
 
     private sealed interface LocalOutcome {

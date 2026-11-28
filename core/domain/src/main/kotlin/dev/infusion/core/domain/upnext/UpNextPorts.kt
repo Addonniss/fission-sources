@@ -94,12 +94,19 @@ interface UpNextPresentationStore {
     fun setShowUpNext(profileId: String, show: Boolean)
 }
 
+data class UpNextFetchEvidence(
+    val fetchedOn: LocalDate,
+    val watched: Instant? = null,
+    val playback: Instant? = null,
+)
+
 data class UpNextCachedAnswer(
     val profileId: String,
     val trackerId: String,
     val accountLabel: String?,
     val fetchedAt: Instant,
     val candidates: List<UpNextTrackerCandidate>,
+    val changeEvidence: UpNextFetchEvidence? = null,
 )
 
 interface UpNextCacheStore {
@@ -118,8 +125,9 @@ interface UpNextCacheStore {
 object UpNextCodec {
 
     const val SELECTION_VERSION_TAG: String = "un1"
-    const val CACHE_VERSION_TAG: String = "uc2"
+    const val CACHE_VERSION_TAG: String = "uc3"
 
+    const val CACHE_VERSION_TAG_V2: String = "uc2"
     const val CACHE_VERSION_TAG_V1: String = "uc1"
 
     private const val FIELD_SEPARATOR = '|'
@@ -187,6 +195,10 @@ object UpNextCodec {
 
             escape(answer.trackerId),
             answer.fetchedAt.toEpochMilli().toString(),
+
+            answer.changeEvidence?.fetchedOn?.toEpochDay()?.toString() ?: "",
+            answer.changeEvidence?.watched?.toEpochMilli()?.toString() ?: "",
+            answer.changeEvidence?.playback?.toEpochMilli()?.toString() ?: "",
         ).joinToString(RECORD_SEPARATOR.toString()) +
             if (records.isEmpty()) "" else RECORD_SEPARATOR + records.joinToString(RECORD_SEPARATOR.toString())
     }
@@ -200,16 +212,20 @@ object UpNextCodec {
         if (stored == null) return null
         val version = when {
             stored.startsWith(CACHE_VERSION_TAG + RECORD_SEPARATOR) -> CACHE_VERSION_TAG
+            stored.startsWith(CACHE_VERSION_TAG_V2 + RECORD_SEPARATOR) -> CACHE_VERSION_TAG_V2
             stored.startsWith(CACHE_VERSION_TAG_V1 + RECORD_SEPARATOR) -> CACHE_VERSION_TAG_V1
             else -> return null
         }
-        val prefix = version + RECORD_SEPARATOR
         val parts = stored.split(RECORD_SEPARATOR)
         val payloadTrackerId = parts.getOrNull(1)?.let { unescape(it) } ?: return null
         if (payloadTrackerId != trackerId) return null
         val fetchedAt = parts.getOrNull(2)?.toLongOrNull()?.let { Instant.ofEpochMilli(it) } ?: return null
+
+        val hasFetchEvidence = version == CACHE_VERSION_TAG
+        val recordsFrom = if (hasFetchEvidence) 6 else 3
+        val changeEvidence = if (hasFetchEvidence) decodeFetchEvidence(parts) else null
         val candidates = ArrayList<UpNextTrackerCandidate>()
-        for (index in 3 until parts.size) {
+        for (index in recordsFrom until parts.size) {
             val candidate = decodeCandidate(parts[index], trackerId, version) ?: continue
             candidates += candidate
         }
@@ -219,7 +235,16 @@ object UpNextCodec {
             accountLabel = accountLabel,
             fetchedAt = fetchedAt,
             candidates = candidates,
+            changeEvidence = changeEvidence,
         )
+    }
+
+    private fun decodeFetchEvidence(parts: List<String>): UpNextFetchEvidence? {
+        val fetchedOn = parts.getOrNull(3)?.toLongOrNull()?.let { java.time.LocalDate.ofEpochDay(it) }
+            ?: return null
+        val watched = parts.getOrNull(4)?.toLongOrNull()?.let { Instant.ofEpochMilli(it) }
+        val playback = parts.getOrNull(5)?.toLongOrNull()?.let { Instant.ofEpochMilli(it) }
+        return UpNextFetchEvidence(fetchedOn = fetchedOn, watched = watched, playback = playback)
     }
 
     private fun decodeCandidate(raw: String, expectedTrackerId: String, version: String): UpNextTrackerCandidate? {
@@ -312,4 +337,14 @@ object UpNextCodec {
         }
         return String(out.toByteArray(), StandardCharsets.UTF_8)
     }
+}
+
+enum class UpNextReuseRefusal {
+
+    ANSWER_CURRENCY_UNPROVABLE,
+}
+
+object UpNextAnswerReuse {
+
+    val refusal: UpNextReuseRefusal = UpNextReuseRefusal.ANSWER_CURRENCY_UNPROVABLE
 }

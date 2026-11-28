@@ -42,4 +42,20 @@ class RoomMetadataCacheStore(
         withContext(ioDispatcher) {
             if (maxAgeMs <= 0L) 0 else dao.deleteOlderThan(nowMs - maxAgeMs)
         }
+
+    override suspend fun stamps(namespace: String, keys: List<String>): Map<String, Long> {
+        val distinct = keys.distinct()
+        if (distinct.isEmpty()) return emptyMap()
+        return withContext(ioDispatcher) {
+
+            distinct.chunked(STAMP_CHUNK).flatMap { chunk ->
+                dao.stamps(namespace, chunk).map { stamp -> stamp.cacheKey to stamp.storedAtMs }
+            }.toMap()
+        }
+    }
+
+    private companion object {
+
+        const val STAMP_CHUNK: Int = 500
+    }
 }

@@ -7,6 +7,7 @@ import dev.infusion.core.model.sync.NOT_SENT_BY_USER_CHOICE
 import dev.infusion.core.model.sync.OutboxEntry
 import dev.infusion.core.model.sync.OutboxState
 import dev.infusion.core.model.sync.isNotSentByUserChoice
+import dev.infusion.core.model.sync.isSuspendedOnDeparture
 import dev.infusion.core.sync.RetryBackoff
 import java.time.Instant
 import java.util.UUID
@@ -16,14 +17,38 @@ class InMemoryWatchOutbox : WatchOutbox {
     private val entries = linkedMapOf<UUID, OutboxEntry>()
     private val entryByKey = mutableMapOf<String, UUID>()
 
-    @Synchronized
+    private val durableWriteListeners = java.util.concurrent.CopyOnWriteArrayList<(String) -> Unit>()
+
     override fun enqueue(entry: OutboxEntry): OutboxEntry {
-        entryByKey[entry.idempotencyKey]?.let { existingId ->
-            return entries.getValue(existingId)
+        val (result, isNew) = synchronized(this) {
+            val existingId = entryByKey[entry.idempotencyKey]
+            if (existingId != null) {
+                entries.getValue(existingId) to false
+            } else {
+                entries[entry.entryId.value] = entry
+                entryByKey[entry.idempotencyKey] = entry.entryId.value
+                entry to true
+            }
         }
-        entries[entry.entryId.value] = entry
-        entryByKey[entry.idempotencyKey] = entry.entryId.value
-        return entry
+
+        if (isNew) notifyDurableWrite(result.connectorId)
+        return result
+    }
+
+    override fun onDurableWrite(listener: (connectorId: String) -> Unit): AutoCloseable {
+        durableWriteListeners += listener
+        return AutoCloseable { durableWriteListeners -= listener }
+    }
+
+    @Synchronized
+    override fun nextEligibleAt(connectorId: String, now: Instant): Instant? =
+        entries.values
+            .filter { it.connectorId == connectorId && it.state == OutboxState.FAILED }
+            .mapNotNull { entry -> entry.nextAttemptAt?.takeIf { it.isAfter(now) } }
+            .minOrNull()
+
+    private fun notifyDurableWrite(connectorId: String) {
+        for (listener in durableWriteListeners) listener(connectorId)
     }
 
     @Synchronized
@@ -57,7 +82,13 @@ class InMemoryWatchOutbox : WatchOutbox {
     }
 
     @Synchronized
-    override fun fail(entryId: OutboxEntryId, error: String, retryable: Boolean, now: Instant) {
+    override fun fail(
+        entryId: OutboxEntryId,
+        error: String,
+        retryable: Boolean,
+        now: Instant,
+        retryAfterMs: Long?,
+    ) {
         val entry = entries[entryId.value] ?: return
         if (entry.state == OutboxState.ACKNOWLEDGED || entry.state == OutboxState.CANCELLED) return
         if (retryable) {
@@ -65,7 +96,7 @@ class InMemoryWatchOutbox : WatchOutbox {
             entries[entryId.value] = entry.copy(
                 state = OutboxState.FAILED,
                 attempts = attempts,
-                nextAttemptAt = now.plusMillis(RetryBackoff.delayMs(attempts)),
+                nextAttemptAt = now.plusMillis(retryAfterMs ?: RetryBackoff.delayMs(attempts)),
                 lastError = error,
             )
         } else {
@@ -91,7 +122,8 @@ class InMemoryWatchOutbox : WatchOutbox {
     override fun disposeByUserChoice(connectorId: String): Int {
         val targets = entries.values.filter {
             it.connectorId == connectorId &&
-                (it.state == OutboxState.PENDING || it.state == OutboxState.FAILED)
+                (it.state == OutboxState.PENDING || it.state == OutboxState.FAILED) &&
+                !it.payload.isSuspendedOnDeparture()
         }
         targets.forEach { entry ->
             entries[entry.entryId.value] = entry.copy(

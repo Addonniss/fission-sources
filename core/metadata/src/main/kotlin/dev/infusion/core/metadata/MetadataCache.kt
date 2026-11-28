@@ -14,6 +14,8 @@ object MetadataNamespaces {
     fun reviews(providerId: String): String = "$providerId.metadata.reviews.v1"
 
     fun languageArtwork(providerId: String): String = "$providerId.metadata.language-artwork.v1"
+
+    fun episodeOrder(providerId: String): String = "$providerId.metadata.episode-order.v1"
 }
 
 data class MetadataCachePolicy(

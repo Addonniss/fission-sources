@@ -2,6 +2,7 @@ package dev.infusion.tv.ui.presentation
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.compositionLocalOf
+import dev.infusion.core.domain.tracking.TrackingAccountIdentity
 import dev.infusion.core.domain.watchlist.WatchlistEntry
 import dev.infusion.core.domain.watchlist.WatchlistKind
 import dev.infusion.core.domain.watchlist.WatchlistSnapshot
@@ -31,11 +32,12 @@ data class CardWatchlistMembership(
             snapshot: WatchlistSnapshot,
             activeTracker: String?,
             activeAccountRef: String?,
+            activeAccountIdentity: TrackingAccountIdentity? = null,
         ): CardWatchlistMembership {
             val badges = LinkedHashMap<String, WatchlistBadgeVariant>()
             for (entry in snapshot.entries) {
                 val remote = activeTracker != null &&
-                    entry.hasRemoteMembership(activeTracker, activeAccountRef)
+                    entry.hasRemoteMembership(activeTracker, activeAccountRef, activeAccountIdentity)
                 when {
                     remote -> badges[entry.entryId] = WatchlistBadgeVariant.REMOTE
                     entry.isLocal -> badges[entry.entryId] = WatchlistBadgeVariant.LOCAL

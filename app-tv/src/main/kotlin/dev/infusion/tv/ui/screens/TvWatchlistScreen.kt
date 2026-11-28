@@ -60,6 +60,7 @@ import dev.infusion.tv.ui.presentation.InfusionContentRow
 import dev.infusion.tv.ui.presentation.InfusionMediaCard
 import dev.infusion.tv.ui.presentation.IdentityMetadataState
 import dev.infusion.tv.ui.presentation.MediaCardArtwork
+import dev.infusion.tv.ui.presentation.RowMaterialization
 import dev.infusion.tv.ui.presentation.TvBrowseColumn
 import dev.infusion.tv.ui.presentation.TvBrowseRowSpacingDp
 import dev.infusion.tv.ui.presentation.contentCardArtworkKey
@@ -80,6 +81,8 @@ import dev.infusion.tv.ui.presentation.cardWatchedUnitOrNull
 import dev.infusion.tv.ui.presentation.withoutHiddenWatchedIn
 import dev.infusion.tv.watchlist.WatchlistCoordinator
 import dev.infusion.tv.watchlist.WatchlistReadReport
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun TvWatchlistScreen(
@@ -136,31 +139,63 @@ fun TvWatchlistScreen(
 
     val attempted = remember { mutableSetOf<String>() }
     val entryIds = snapshot.entries.map { it.entryId }
+    val movies = snapshot.row(WatchlistKind.MOVIE)
+    val shows = snapshot.row(WatchlistKind.SHOW)
 
-    LaunchedEffect(entryIds) {
+    var movieWindow by remember { mutableStateOf(0) }
+    var showWindow by remember { mutableStateOf(0) }
+    val presentedEntries = remember(movies, shows, movieWindow, showWindow) {
+        movies.take(maxOf(movieWindow, RowMaterialization.initialCount(movies.size))) +
+            shows.take(maxOf(showWindow, RowMaterialization.initialCount(shows.size)))
+    }
+    val presentedIds = presentedEntries.map { it.entryId }
+
+    LaunchedEffect(entryIds, presentedIds) {
 
         membershipArtwork?.retainOnly(entryIds)
-        val todo = entryIds.filter { entryId ->
-            val entry = snapshot.entries.firstOrNull { it.entryId == entryId } ?: return@filter false
+        val byId = snapshot.entries.associateBy { it.entryId }
+        val todo = presentedIds.filter { entryId ->
+            val entry = byId[entryId] ?: return@filter false
             val needsArtwork = entry.artworkLocator == null ||
 
                 (entry.kind == WatchlistKind.SHOW && entry.landscapeLocator == null)
             needsArtwork && entryId !in enriched && entryId !in attempted
         }
+        val sweepStart = android.os.SystemClock.uptimeMillis()
+        android.util.Log.i(
+            "WL-PERF",
+            "sweepStart entries=${entryIds.size} presented=${presentedIds.size} todo=${todo.size} " +
+                "remembered=${enriched.size} at=$sweepStart",
+        )
+
         for (batch in todo.chunked(ENRICHMENT_BATCH)) {
-            for (entryId in batch) {
-                attempted += entryId
-                val entry = snapshot.entries.firstOrNull { it.entryId == entryId } ?: continue
-                val artwork = runCatching {
-                    enrichmentArtwork(metadata, mediaIdentityResolver, watchlistIdentity, entry)
-                }.getOrNull()
-                if (artwork != null) enriched[entryId] = artwork
+            batch.forEach { entryId -> attempted += entryId }
+            val resolved = withContext(Dispatchers.IO) {
+                batch.mapNotNull { entryId ->
+                    val entry = byId[entryId] ?: return@mapNotNull null
+                    val artwork = runCatching {
+                        enrichmentArtwork(metadata, mediaIdentityResolver, watchlistIdentity, entry)
+                    }.getOrNull() ?: return@mapNotNull null
+                    entryId to artwork
+                }
             }
+            for ((entryId, artwork) in resolved) enriched[entryId] = artwork
         }
+        val sweepEnd = android.os.SystemClock.uptimeMillis()
+        android.util.Log.i(
+            "WL-PERF",
+            "sweepEnd todo=${todo.size} resolved=${enriched.size} totalMs=${sweepEnd - sweepStart} " +
+                "at=$sweepEnd",
+        )
     }
 
-    val movies = snapshot.row(WatchlistKind.MOVIE)
-    val shows = snapshot.row(WatchlistKind.SHOW)
+    LaunchedEffect(snapshot.entries.size, movies.size, shows.size) {
+        android.util.Log.i(
+            "WL-PERF",
+            "compose entries=${snapshot.entries.size} movies=${movies.size} shows=${shows.size} " +
+                "remote=$remoteState at=${android.os.SystemClock.uptimeMillis()}",
+        )
+    }
 
     val rows: List<WatchlistPageRow> = listOf(
         WatchlistMembershipRow(
@@ -373,6 +408,14 @@ fun TvWatchlistScreen(
                         stageMinHeight = sectionStageMinHeight,
                         requesters = requesters,
                         enriched = enriched,
+
+                        onWindowChanged = { materialized ->
+                            if (row.row.kind == WatchlistKind.MOVIE) {
+                                movieWindow = materialized
+                            } else {
+                                showWindow = materialized
+                            }
+                        },
                         onFocusedKeyChanged = { key -> focusedKey = key; chrome.onContentKeyFocused(key) },
                         onOpenDetails = onOpenDetails,
 
@@ -467,6 +510,8 @@ private fun WatchlistRow(
     stageMinHeight: androidx.compose.ui.unit.Dp,
     requesters: FocusKeyRegistry,
     enriched: SnapshotStateMap<String, MediaArtworkRef>,
+
+    onWindowChanged: (Int) -> Unit,
     onFocusedKeyChanged: (String) -> Unit,
     onOpenDetails: (TitleId, TitleKind?, MediaPreview) -> Unit,
 
@@ -528,7 +573,19 @@ private fun WatchlistRow(
                 )
             }
             if (row.entries.isNotEmpty()) {
-                InfusionContentRow(items = row.entries, key = { cardKey(it) }) { entry ->
+                InfusionContentRow(
+                    items = row.entries,
+                    key = { cardKey(it) },
+
+                    onWindowChanged = { loaded, materialized ->
+                        onWindowChanged(materialized)
+                        android.util.Log.i(
+                            "WL-PERF",
+                            "rowWindow row=${row.id} loaded=$loaded materialized=$materialized " +
+                                "at=${android.os.SystemClock.uptimeMillis()}",
+                        )
+                    },
+                ) { entry ->
                     val kind = entryKind(entry)
                     val preview = previewOf(entry, artworkRef(entry, enriched))
                     InfusionMediaCard(
@@ -757,27 +814,38 @@ private suspend fun enrichmentArtwork(
     watchlistIdentity: WatchlistIdentityResolver,
     entry: WatchlistEntry,
 ): MediaArtworkRef? {
+    val t0 = android.os.SystemClock.uptimeMillis()
     val type = if (entry.kind == WatchlistKind.MOVIE) MediaType.MOVIE else MediaType.SHOW
 
-    val proven = runCatching { watchlistIdentity.aliasesFor(entry.titleId, entry.kind) }.getOrNull()
+    val proven = runCatching { watchlistIdentity.aliasesFor(entry.titleId, entry.kind) }
+    proven.exceptionOrNull()?.let { failure ->
+        android.util.Log.i(
+            "WL-PERF",
+            "aliasFail class=${failure.javaClass.simpleName} msg=${failure.message?.take(80)}",
+        )
+    }
+    val tAlias = android.os.SystemClock.uptimeMillis()
+    val provenAliases = proven.getOrNull()
     val identity = when {
-        proven != null -> MediaIdentity(
+        provenAliases != null -> MediaIdentity(
             type = type,
-            titleId = proven.titleId,
+            titleId = provenAliases.titleId,
             externalIds = ExternalIds(
-                tmdbId = proven.externalIds.tmdbId,
-                imdbId = proven.externalIds.imdbId,
-                tvdbId = proven.externalIds.tvdbId,
+                tmdbId = provenAliases.externalIds.tmdbId,
+                imdbId = provenAliases.externalIds.imdbId,
+                tvdbId = provenAliases.externalIds.tvdbId,
             ),
         )
         else -> runCatching { identityResolver.resolve(entry.titleId, type, MetadataLocale.Default) }
             .getOrNull() ?: MediaIdentity(type = type, titleId = entry.titleId)
     }
+    val tIdentity = android.os.SystemClock.uptimeMillis()
     val details = metadata.details(identity, MetadataLocale.Default) ?: return null
+    val tDetails = android.os.SystemClock.uptimeMillis()
     val artwork: MediaArtwork? = details.artwork
     val poster = artwork?.poster
     val backdrop = artwork?.backdrop
-    return when {
+    val ref = when {
         poster != null -> MediaArtworkRef.metadata(
             provider = poster.provider,
             path = poster.path,
@@ -791,6 +859,12 @@ private suspend fun enrichmentArtwork(
         )
         else -> null
     }
+    android.util.Log.i(
+        "WL-PERF",
+        "enrich kind=${entry.kind} aliasMs=${tAlias - t0} identityMs=${tIdentity - tAlias} " +
+            "detailsMs=${tDetails - tIdentity} art=${ref != null} at=${android.os.SystemClock.uptimeMillis()}",
+    )
+    return ref
 }
 
 internal data class WatchlistAnchorAct(
@@ -886,4 +960,4 @@ private const val ROW_RECENT_SHOWS = "watchlist:recent-shows"
 
 private val EmptyRecentlyWatchedState = kotlinx.coroutines.flow.MutableStateFlow(RecentlyWatchedUiState())
 
-private const val ENRICHMENT_BATCH = 4
+private const val ENRICHMENT_BATCH = 7

@@ -13,11 +13,13 @@ import dev.infusion.core.domain.tracking.TrackingPlaybackRequest
 import dev.infusion.core.domain.tracking.TrackingProviderCapabilities
 import dev.infusion.core.domain.tracking.TrackingProviderPort
 import dev.infusion.core.domain.tracking.TrackingSavedPlayback
+import dev.infusion.core.domain.tracking.TrackingScrobbleAction
 import dev.infusion.core.domain.tracking.TrackingScrobbleEvent
 import dev.infusion.core.domain.tracking.TrackingWatchedAnswer
 import dev.infusion.core.domain.tracking.TrackingWatchedLookupPort
 import dev.infusion.core.domain.tracking.TrackingWatchedQuery
 import dev.infusion.core.domain.tracking.TrackingWatchedVerdict
+import dev.infusion.core.domain.tracking.TrackingWatchedWriteBatchPort
 import dev.infusion.core.domain.upnext.UpNextReadPort
 import dev.infusion.core.domain.upnext.UpNextReadRequest
 import dev.infusion.core.domain.upnext.UpNextTrackerPage
@@ -27,7 +29,11 @@ class WeTrakrTrackingProvider(
     private val configuration: WeTrakrConfiguration,
     private val client: WeTrakrHttpClient,
     private val auth: WeTrakrAuthRepository,
-) : TrackingProviderPort, TrackingInboundReadPort, TrackingWatchedLookupPort, UpNextReadPort {
+) : TrackingProviderPort,
+    TrackingInboundReadPort,
+    TrackingWatchedLookupPort,
+    UpNextReadPort,
+    TrackingWatchedWriteBatchPort {
 
     override val providerId: String = WeTrakrAuthRepository.WETRAKR_PROVIDER_ID
 
@@ -89,7 +95,7 @@ class WeTrakrTrackingProvider(
         return when (val outcome = send(request)) {
             is WeTrakrOutcome.Success ->
                 WeTrakrScrobbleMapping.deliveryResult(WeTrakrScrobbleMapping.scrobbleOutcome(outcome.response))
-            is WeTrakrOutcome.Retry -> TrackingDeliveryResult.Retryable(outcome.reason)
+            is WeTrakrOutcome.Retry -> retryable(outcome)
             is WeTrakrOutcome.Rejected -> TrackingDeliveryResult.Rejected(outcome.reason)
             is WeTrakrOutcome.Unauthorized -> TrackingDeliveryResult.Unauthorized(outcome.reason)
         }
@@ -99,10 +105,47 @@ class WeTrakrTrackingProvider(
         when (val outcome = send(WeTrakrScrobbleMapping.watchedWriteRequest(event.media, event.occurredAt))) {
             is WeTrakrOutcome.Success ->
                 WeTrakrScrobbleMapping.deliveryResult(WeTrakrScrobbleMapping.watchedWriteOutcome(outcome.response))
-            is WeTrakrOutcome.Retry -> TrackingDeliveryResult.Retryable(outcome.reason)
+            is WeTrakrOutcome.Retry -> retryable(outcome)
             is WeTrakrOutcome.Rejected -> TrackingDeliveryResult.Rejected(outcome.reason)
             is WeTrakrOutcome.Unauthorized -> TrackingDeliveryResult.Unauthorized(outcome.reason)
         }
+
+    override val maxWatchedWriteBatch: Int = WeTrakrHttpClient.MAX_WATCHED_WRITE_BATCH
+
+    override fun isWatchedWriteBatchable(write: TrackingScrobbleEvent): Boolean =
+        write.action == TrackingScrobbleAction.MARK_WATCHED &&
+            write.media.kind == TrackingMediaKind.MOVIE
+
+    override suspend fun deliverWatchedBatch(
+        writes: List<TrackingScrobbleEvent>,
+    ): List<TrackingDeliveryResult> {
+        require(writes.size in 2..maxWatchedWriteBatch) {
+            "a batched watched write carries 2..$maxWatchedWriteBatch items"
+        }
+        val items = WeTrakrScrobbleMapping.watchedWriteItems(writes)
+
+            ?: return List(writes.size) { TrackingDeliveryResult.Rejected(BATCH_NOT_ATTRIBUTABLE) }
+        return when (val outcome = send(WeTrakrScrobbleMapping.watchedBatchWriteRequest(items))) {
+            is WeTrakrOutcome.Success -> WeTrakrScrobbleMapping
+                .watchedBatchOutcomes(outcome.response, items)
+                .map(WeTrakrScrobbleMapping::deliveryResult)
+
+            is WeTrakrOutcome.Retry -> List(writes.size) { retryable(outcome) }
+            is WeTrakrOutcome.Rejected -> List(writes.size) { TrackingDeliveryResult.Rejected(outcome.reason) }
+            is WeTrakrOutcome.Unauthorized -> List(writes.size) { TrackingDeliveryResult.Unauthorized(outcome.reason) }
+        }
+    }
+
+    private fun retryable(outcome: WeTrakrOutcome.Retry): TrackingDeliveryResult.Retryable =
+        TrackingDeliveryResult.Retryable(
+            reason = outcome.reason,
+            retryAfterMs = if (WeTrakrHttpClient.isDailyQuotaReason(outcome.reason)) {
+
+                outcome.retryAfterMs?.coerceAtMost(WeTrakrHttpClient.DAILY_WINDOW_MAX_MS)
+            } else {
+                null
+            },
+        )
 
     override suspend fun readActivityStamp(): TrackingInboundOutcome<TrackingActivityStamp> =
         when (val outcome = send(WeTrakrInboundMapping.activitiesRequest())) {
@@ -383,6 +426,8 @@ class WeTrakrTrackingProvider(
     private companion object {
         const val NO_AUTHORIZATION = "no valid WeTrakr authorization for this profile"
         const val MALFORMED_RESPONSE = "wetrakr answered a payload this client cannot use"
+
+        const val BATCH_NOT_ATTRIBUTABLE = "wetrakr_batch_not_attributable"
 
         const val NOT_FOUND_REASON = "http_404"
 

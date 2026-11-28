@@ -3,6 +3,7 @@ package dev.infusion.core.database.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import androidx.room.ColumnInfo
 import dev.infusion.core.database.entity.MetadataCacheEntity
 
 @Dao
@@ -28,4 +29,12 @@ interface MetadataCacheDao {
 
     @Query("SELECT COUNT(*) FROM metadata_cache")
     fun count(): Int
+
+    @Query("SELECT cache_key, stored_at_ms FROM metadata_cache WHERE namespace = :namespace AND cache_key IN (:keys)")
+    fun stamps(namespace: String, keys: List<String>): List<MetadataCacheStamp>
 }
+
+data class MetadataCacheStamp(
+    @ColumnInfo(name = "cache_key") val cacheKey: String,
+    @ColumnInfo(name = "stored_at_ms") val storedAtMs: Long,
+)

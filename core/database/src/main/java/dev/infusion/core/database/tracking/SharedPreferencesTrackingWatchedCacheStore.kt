@@ -61,6 +61,8 @@ class SharedPreferencesTrackingWatchedCacheStore(
                     put(FIELD_VERDICT, entry.verdict.name)
                     entry.watchedAt?.let { put(FIELD_WATCHED_AT, it.toEpochMilli()) }
                     entry.resolvedUnderGate?.let { put(FIELD_GATE, it.toEpochMilli()) }
+
+                    entry.coverageTakenAt?.let { put(FIELD_COVERAGE_TAKEN_AT, it.toEpochMilli()) }
                 },
             )
         }
@@ -82,6 +84,8 @@ class SharedPreferencesTrackingWatchedCacheStore(
                 verdict = verdict,
                 watchedAt = epochMillis(row, FIELD_WATCHED_AT),
                 resolvedUnderGate = epochMillis(row, FIELD_GATE),
+
+                coverageTakenAt = epochMillis(row, FIELD_COVERAGE_TAKEN_AT),
             )
         }.getOrNull()
     }
@@ -107,5 +111,7 @@ class SharedPreferencesTrackingWatchedCacheStore(
         private const val FIELD_VERDICT = "verdict"
         private const val FIELD_WATCHED_AT = "watched_at_ms"
         private const val FIELD_GATE = "resolved_under_gate_ms"
+
+        private const val FIELD_COVERAGE_TAKEN_AT = "coverage_taken_at_ms"
     }
 }

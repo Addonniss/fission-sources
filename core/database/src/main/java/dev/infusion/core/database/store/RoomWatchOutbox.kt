@@ -10,6 +10,7 @@ import dev.infusion.core.model.OutboxEntryId
 import dev.infusion.core.model.sync.NOT_SENT_BY_USER_CHOICE
 import dev.infusion.core.model.sync.OutboxEntry
 import dev.infusion.core.model.sync.OutboxState
+import dev.infusion.core.model.sync.WATCH_OUTBOX_SUSPENDED_ON_DEPARTURE
 import dev.infusion.core.sync.RetryBackoff
 import dev.infusion.core.domain.sync.IssuedRequestOutcome
 import dev.infusion.core.domain.sync.WatchOutbox
@@ -22,18 +23,34 @@ class RoomWatchOutbox(
     private val clock: Clock = Clock.SYSTEM,
 ) : WatchOutbox {
 
+    private val durableWriteListeners = java.util.concurrent.CopyOnWriteArrayList<(String) -> Unit>()
+
     override fun enqueue(entry: OutboxEntry): OutboxEntry {
         val existing = outboxDao.getByKey(entry.connectorId, entry.idempotencyKey)
         if (existing != null) return OutboxMapper.toCanonical(existing) ?: entry
         val row = toEntity(scope.activeProfileId, entry)
         val inserted = outboxDao.enqueue(row)
-        return if (inserted == -1L) {
+        if (inserted == -1L) {
 
-            outboxDao.getByKey(entry.connectorId, entry.idempotencyKey)
+            return outboxDao.getByKey(entry.connectorId, entry.idempotencyKey)
                 ?.let { OutboxMapper.toCanonical(it) } ?: entry
-        } else {
-            entry
         }
+
+        notifyDurableWrite(entry.connectorId)
+        return entry
+    }
+
+    override fun onDurableWrite(listener: (connectorId: String) -> Unit): AutoCloseable {
+        durableWriteListeners += listener
+        return AutoCloseable { durableWriteListeners -= listener }
+    }
+
+    override fun nextEligibleAt(connectorId: String, now: Instant): Instant? =
+        outboxDao.earliestEligibleAtMs(scope.activeProfileId, connectorId, now.toEpochMilli())
+            ?.let(Instant::ofEpochMilli)
+
+    private fun notifyDurableWrite(connectorId: String) {
+        for (listener in durableWriteListeners) listener(connectorId)
     }
 
     override fun pending(connectorId: String, now: Instant): List<OutboxEntry> =
@@ -58,7 +75,13 @@ class RoomWatchOutbox(
         ) > 0
     }
 
-    override fun fail(entryId: OutboxEntryId, error: String, retryable: Boolean, now: Instant) {
+    override fun fail(
+        entryId: OutboxEntryId,
+        error: String,
+        retryable: Boolean,
+        now: Instant,
+        retryAfterMs: Long?,
+    ) {
         val profileId = scope.activeProfileId
         val row = outboxDao.getByIdForProfile(profileId, entryId.value.toString()) ?: return
         if (row.state == OutboxState.ACKNOWLEDGED || row.state == OutboxState.CANCELLED) return
@@ -70,7 +93,8 @@ class RoomWatchOutbox(
                 state = OutboxState.FAILED.name,
                 attemptCount = attempts,
                 lastError = RETRYABLE_FAILURE_CODE,
-                nextAttemptAtMs = now.toEpochMilli() + RetryBackoff.delayMs(attempts),
+                nextAttemptAtMs = now.toEpochMilli() +
+                    (retryAfterMs ?: RetryBackoff.delayMs(attempts)),
             )
         } else {
             outboxDao.fail(
@@ -94,7 +118,12 @@ class RoomWatchOutbox(
         outboxDao.deleteByConnector(connectorId)
 
     override fun disposeByUserChoice(connectorId: String): Int =
-        outboxDao.disposeByUserChoice(scope.activeProfileId, connectorId, NOT_SENT_BY_USER_CHOICE)
+        outboxDao.disposeByUserChoice(
+            scope.activeProfileId,
+            connectorId,
+            NOT_SENT_BY_USER_CHOICE,
+            WATCH_OUTBOX_SUSPENDED_ON_DEPARTURE.toList(),
+        )
 
     override fun retryableCount(connectorId: String): Int =
         outboxDao.countRetryable(scope.activeProfileId, connectorId)

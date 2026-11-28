@@ -298,6 +298,9 @@ interface MetadataCacheStore {
     suspend fun clearNamespace(namespace: String)
 
     suspend fun purgeOlderThan(nowMs: Long, maxAgeMs: Long): Int
+
+    suspend fun stamps(namespace: String, keys: List<String>): Map<String, Long> =
+        keys.distinct().mapNotNull { key -> load(namespace, key)?.let { key to it.storedAtMs } }.toMap()
 }
 
 interface MetadataCodec {

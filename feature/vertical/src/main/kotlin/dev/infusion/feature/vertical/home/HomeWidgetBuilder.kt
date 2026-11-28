@@ -1225,7 +1225,17 @@ private fun widgetAddMessage(
 
 private const val NOT_FOUND: String = "not_found"
 
-private fun publicResultMessage(reason: String): String = when (reason) {
+private const val RATE_LIMIT_REASON_PREFIX: String = "rate_limit:"
+
+private fun publicResultMessage(reason: String): String =
+    if (reason.startsWith(RATE_LIMIT_REASON_PREFIX)) {
+
+        "The provider is rate-limiting requests (${reason.substringAfter(':')}). Try again shortly."
+    } else {
+        publicResultMessageExact(reason)
+    }
+
+private fun publicResultMessageExact(reason: String): String = when (reason) {
     "mdblist.com exposes no public user search" -> "This provider has no public user search."
     "not exposed publicly by mdblist.com" -> "This route is not public on this provider."
     "simkl exposes no user search" -> "This provider has no user search; look up a user id instead."

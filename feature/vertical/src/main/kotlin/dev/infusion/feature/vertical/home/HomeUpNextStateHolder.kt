@@ -5,6 +5,7 @@ import dev.infusion.core.domain.tracking.TrackingInboundIdentityCompletionPort
 import dev.infusion.core.domain.tracking.TrackingInboundIdentityPort
 import dev.infusion.core.domain.tracking.TrackingInboundOutcome
 import dev.infusion.core.domain.tracking.TrackingWatchKeyLookup
+import dev.infusion.core.domain.upnext.UpNextAnswerReuse
 import dev.infusion.core.domain.upnext.UpNextCacheStore
 import dev.infusion.core.domain.upnext.UpNextCachedAnswer
 import dev.infusion.core.domain.upnext.UpNextEpisode
@@ -33,6 +34,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,9 +46,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.withLock
 
 class HomeUpNextStateHolder(
 
@@ -73,6 +75,9 @@ class HomeUpNextStateHolder(
 
     private val presentationRetention: UpNextPresentationRetention? = null,
 
+    private val episodeEvidenceRetention: UpNextEpisodeEvidenceRetention =
+        InMemoryUpNextEpisodeEvidenceRetention.Shared,
+
     private val trace: (String) -> Unit = {},
     private val today: () -> LocalDate = LocalDate::now,
 
@@ -95,27 +100,126 @@ class HomeUpNextStateHolder(
         val accountLabel: String?,
     )
 
+    @Volatile
     private var loadKey: LoadKey? = null
 
+    @Volatile
     private var publishedKey: LoadKey? = null
 
     private val enriched: java.util.concurrent.ConcurrentHashMap<String, UpNextCardEnrichment> =
         java.util.concurrent.ConcurrentHashMap()
 
+    private val heldAnswers: java.util.concurrent.ConcurrentHashMap<LoadKey, TrackerAnswer> =
+        java.util.concurrent.ConcurrentHashMap()
+
     private val resolvedThisVisit: MutableSet<String> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
+    @Volatile
     private var currentCards: List<dev.infusion.core.domain.upnext.UpNextCard> = emptyList()
 
     private var presentJob: Job? = null
 
+    @Volatile
     private var presentingVisit: LoadKey? = null
 
     private val publicationTick = MutableStateFlow(0L)
 
     private val enrichGate: Semaphore = Semaphore(MAX_CONCURRENT_ENRICHMENTS)
 
-    private val publishMutex: kotlinx.coroutines.sync.Mutex = kotlinx.coroutines.sync.Mutex()
+    private val publishMutex: java.util.concurrent.locks.ReentrantLock =
+        java.util.concurrent.locks.ReentrantLock()
+
+    private val attribution = UpNextAttribution()
+
+    private class UpNextAttribution {
+
+        var ledgerDispatchMs: Long = 0
+        var ledgerFlowMs: Long = 0
+        var ledgerGroupMs: Long = 0
+        var ledgerEvidenceMs: Long = 0
+        var ledgerRows: Int = 0
+
+        var seriesDispatchMs: Long = 0
+        var hydrateResumeMs: Long = 0
+        var retentionGetMs: Long = 0
+        var sufficiencyMs: Long = 0
+        var sufficiencyChecks: Int = 0
+        var episodesBuildMs: Long = 0
+        var retentionPutMs: Long = 0
+        var snapshotMs: Long = 0
+        var snapshotBuilds: Int = 0
+        var orderMs: Long = 0
+        var orderRuns: Int = 0
+        var decisionCalls: Int = 0
+
+        var seedLookups: Int = 0
+        var seedHits: Int = 0
+        var seedLookupMs: Long = 0
+
+        var pubAttempts: Int = 0
+        var pubWithheld: Int = 0
+        var pubEmitted: Int = 0
+        var pubSameVisible: Int = 0
+        var pubMainThread: Int = 0
+        var pubAddedKeys: Int = 0
+        var pubRemovedKeys: Int = 0
+        var pubReplacedKeys: Int = 0
+        var pubWouldDropMs: Long = 0
+        var pubSeedMs: Long = 0
+        var pubRowBuildMs: Long = 0
+        var pubEmitMs: Long = 0
+        var pubWakeMs: Long = 0
+        var rowCardsBuilt: Int = 0
+        var rowCardsReused: Int = 0
+
+        val enrichIssued: java.util.concurrent.atomic.AtomicInteger =
+            java.util.concurrent.atomic.AtomicInteger()
+        val enrichMs: java.util.concurrent.atomic.AtomicLong = java.util.concurrent.atomic.AtomicLong()
+        val presentWakes: java.util.concurrent.atomic.AtomicInteger =
+            java.util.concurrent.atomic.AtomicInteger()
+
+        fun reset() {
+            ledgerDispatchMs = 0
+            ledgerFlowMs = 0
+            ledgerGroupMs = 0
+            ledgerEvidenceMs = 0
+            ledgerRows = 0
+            seriesDispatchMs = 0
+            hydrateResumeMs = 0
+            retentionGetMs = 0
+            sufficiencyMs = 0
+            sufficiencyChecks = 0
+            episodesBuildMs = 0
+            retentionPutMs = 0
+            snapshotMs = 0
+            snapshotBuilds = 0
+            orderMs = 0
+            orderRuns = 0
+            decisionCalls = 0
+            seedLookups = 0
+            seedHits = 0
+            seedLookupMs = 0
+            pubAttempts = 0
+            pubWithheld = 0
+            pubEmitted = 0
+            pubSameVisible = 0
+            pubMainThread = 0
+            pubAddedKeys = 0
+            pubRemovedKeys = 0
+            pubReplacedKeys = 0
+            pubWouldDropMs = 0
+            pubSeedMs = 0
+            pubRowBuildMs = 0
+            pubEmitMs = 0
+            pubWakeMs = 0
+            rowCardsBuilt = 0
+            rowCardsReused = 0
+            enrichIssued.set(0)
+            enrichMs.set(0)
+            presentWakes.set(0)
+        }
+    }
 
     fun reportPresentationWindow(materialized: Int) = presentationWindow?.report(materialized)
 
@@ -153,6 +257,7 @@ class HomeUpNextStateHolder(
 
     fun onSurfaceAbsent() {
         surfacePresent.value = false
+        heldAnswers.clear()
     }
 
     fun refresh() {
@@ -199,6 +304,9 @@ class HomeUpNextStateHolder(
 
     private suspend fun load() {
         val startedAt = System.currentTimeMillis()
+        attribution.reset()
+
+        seedAsked.clear()
         val profileId = runCatching { activeProfileId() }.getOrNull()
         if (profileId.isNullOrBlank()) {
             _state.value = HomeUpNextUiState(row = UpNextRowState.Hidden)
@@ -215,48 +323,204 @@ class HomeUpNextStateHolder(
         publish(UpNextRowState.Loading, profileId, resolution)
         trace("start source=${sourceLabel(resolution)}")
 
-        val ledgerMs = System.currentTimeMillis()
-        val ledger = withContext(ioDispatcher) { ledgerStates() }
-        trace("ledger series=${ledger.size} ms=${System.currentTimeMillis() - ledgerMs}")
+        val ledgerAt = System.nanoTime()
+        val ledgerRead = withContext(ioDispatcher) { ledgerStates() }
+        val ledger = ledgerRead.series
+        val ledgerWallMs = (System.nanoTime() - ledgerAt) / 1_000_000
+        val evidenceAt = System.nanoTime()
         val ledgerEvidence = ledgerEvidence(ledger)
+        attribution.ledgerDispatchMs = ledgerWallMs - ledgerRead.flowMs - ledgerRead.groupMs
+        attribution.ledgerFlowMs = ledgerRead.flowMs
+        attribution.ledgerGroupMs = ledgerRead.groupMs
+        attribution.ledgerEvidenceMs = (System.nanoTime() - evidenceAt) / 1_000_000
+        attribution.ledgerRows = ledgerRead.rows
+        trace(
+            "ledger series=${ledger.size} ms=$ledgerWallMs rows=${ledgerRead.rows} " +
+                "dispatch_ms=${attribution.ledgerDispatchMs} flow_ms=${ledgerRead.flowMs} " +
+                "group_ms=${ledgerRead.groupMs} evidence_ms=${attribution.ledgerEvidenceMs}",
+        )
 
+        coroutineScope { loadVisit(profileId, resolution, ledger, ledgerEvidence, startedAt) }
+    }
+
+    private suspend fun CoroutineScope.loadVisit(
+        profileId: String,
+        resolution: UpNextSourceResolution,
+        ledger: Map<TitleId, LedgerSeries>,
+        ledgerEvidence: List<UpNextSeriesEvidence>,
+        startedAt: Long,
+    ) {
+        val visit = loadKey
         val tracker = resolution.effective as? UpNextSource.Tracker
-        val answer = if (tracker != null) {
-            readTrackerAnswer(profileId, tracker, resolution, ledgerEvidence, startedAt)
+
+        val cachedCandidates = if (tracker != null) {
+            publishCachedAnswer(profileId, tracker, resolution, ledgerEvidence, startedAt)
         } else {
-            null
+            emptyList()
         }
 
-        val visit = loadKey
+        val sharedCandidates =
+            java.util.concurrent.atomic.AtomicReference<List<UpNextTrackerCandidate>>(cachedCandidates)
+        val sharedEvidence =
+            java.util.concurrent.atomic.AtomicReference<List<UpNextSeriesEvidence>>(ledgerEvidence)
+
+        var published: List<dev.infusion.core.domain.upnext.UpNextCard>? = null
+        val trackerRead = tracker?.let { selected ->
+            async {
+                val arrived = readTrackerVisit(profileId, selected, resolution, cachedCandidates)
+                sharedCandidates.set(arrived.candidates)
+
+                publishCandidates(
+                    profileId = profileId,
+                    resolution = resolution,
+                    evidence = sharedEvidence.get(),
+                    candidates = arrived.candidates,
+                    label = "tracker",
+                    startedAt = startedAt,
+                )
+                trace("tracker answer published")
+                arrived
+            }
+        }
+
         val localMs = System.currentTimeMillis()
         val evidenceBySeries = LinkedHashMap<TitleId, UpNextSeriesEvidence>()
         ledgerEvidence.forEach { evidenceBySeries[it.seriesTitleId] = it }
         var hydratedSeries = 0
 
-        var published: List<dev.infusion.core.domain.upnext.UpNextCard>? = null
-        val trackerCandidates = answer?.candidates.orEmpty()
+        var hydrateNanos = 0L
+        var decisionNanos = 0L
+        var publishNanos = 0L
+        var publications = 0
+        var derivations = 0
+        var reusedSeries = 0
+        var episodesMapped = 0
+        var seasonsMapped = 0
+        var hierarchySeasonCalls = 0
+        var hierarchyEpisodeCalls = 0
+        var hierarchyMs = 0L
+        var seriesIndex = 0
+
+        val decisions = HashMap<TitleId, dev.infusion.core.domain.upnext.UpNextCard?>(ledger.size * 2)
+        var decisionsCandidates: List<UpNextTrackerCandidate>? = null
+
+        var candidateOrder: Map<TitleId, Int> = emptyMap()
+
+        fun rebuildEveryDecision(candidates: List<UpNextTrackerCandidate>) {
+            decisions.clear()
+            val candidateBySeries = candidates.groupBy { it.seriesTitleId }.mapValues { (_, entries) -> entries.first() }
+
+            candidateOrder = candidates.withIndex()
+                .groupBy({ (_, candidate) -> candidate.seriesTitleId }, { (index, _) -> index })
+                .mapValues { (_, indexes) -> indexes.first() }
+            for ((id, evidence) in evidenceBySeries) {
+                decisions[id] = UpNextProjection.decideSeries(
+                    evidence,
+                    candidateBySeries[id],
+                    today(),
+                    now(),
+                    candidateOrder[id],
+                ).card
+                derivations++
+                attribution.decisionCalls++
+            }
+            for ((id, candidate) in candidateBySeries) {
+                if (id !in evidenceBySeries) {
+                    decisions[id] = UpNextProjection.decideSeries(
+                        null,
+                        candidate,
+                        today(),
+                        now(),
+                        candidateOrder[id],
+                    ).card
+                    derivations++
+                    attribution.decisionCalls++
+                }
+            }
+        }
 
         val orderedLedger = ledger.entries.sortedByDescending { it.value.activityAt ?: Instant.EPOCH }
         for ((seriesId, ledgerSeries) in orderedLedger) {
-            if (loadKey != visit) return
-            val evidence = withContext(ioDispatcher) { localEvidenceFor(seriesId, ledgerSeries) }
+            if (loadKey != visit) {
+
+                trackerRead?.cancel()
+                return
+            }
+            val enqueuedAt = System.nanoTime()
+            val hydrateAt = System.nanoTime()
+            val built = withContext(ioDispatcher) { localEvidenceFor(profileId, seriesId, ledgerSeries, enqueuedAt) }
+            val hydrateMs = (System.nanoTime() - hydrateAt) / 1_000_000
+            hydrateNanos += hydrateMs * 1_000_000
+            attribution.hydrateResumeMs += (hydrateMs - built.waitMs - built.insideMs).coerceAtLeast(0)
+            if (built.reused) reusedSeries++
+            built.hydrated?.let { hydrated ->
+                hierarchyMs += hydrated.callMs
+                hierarchySeasonCalls += hydrated.seasonCalls
+                hierarchyEpisodeCalls += hydrated.episodeCalls
+            }
+            val evidence = built.evidence
             if (evidence != null) {
                 evidenceBySeries[seriesId] = evidence
                 hydratedSeries++
+                seasonsMapped += evidence.episodes.map { it.seasonNumber }.distinct().size
+                episodesMapped += evidence.episodes.size
             }
-            val cards = UpNextProjection
-                .project(evidenceBySeries.values.toList(), trackerCandidates, today(), now()).cards
+            seriesIndex++
+            val snapshotAt = System.nanoTime()
+            val snapshot = evidenceBySeries.values.toList()
+            attribution.snapshotMs += (System.nanoTime() - snapshotAt) / 1_000_000
+            attribution.snapshotBuilds++
+
+            sharedEvidence.set(snapshot)
+            val decisionAt = System.nanoTime()
+            val candidatesNow = sharedCandidates.get()
+            if (candidatesNow !== decisionsCandidates) {
+                decisionsCandidates = candidatesNow
+                rebuildEveryDecision(candidatesNow)
+            } else {
+                val candidate = candidatesNow.firstOrNull { it.seriesTitleId == seriesId }
+                decisions[seriesId] =
+                    UpNextProjection.decideSeries(
+                        evidenceBySeries[seriesId],
+                        candidate,
+                        today(),
+                        now(),
+                        candidateOrder[seriesId],
+                    ).card
+                derivations++
+                attribution.decisionCalls++
+            }
+            val orderAt = System.nanoTime()
+            val cards = UpNextProjection.ordered(decisions.values.filterNotNull())
+            attribution.orderMs += (System.nanoTime() - orderAt) / 1_000_000
+            attribution.orderRuns++
+            decisionNanos += (System.nanoTime() - decisionAt)
+            val publishAt = System.nanoTime()
+            if (cards != published) recordPublicationShape(published, cards)
             if (cards != published && publishCards(cards, profileId, resolution, label = "progress", startedAt = startedAt)) {
                 published = cards
+                publications++
             }
+            publishNanos += (System.nanoTime() - publishAt)
         }
         val local = evidenceBySeries.values.toList()
         trace(
             "local evidence series=${local.size} hydrated=$hydratedSeries " +
                 "ms=${System.currentTimeMillis() - localMs}",
         )
+        trace(
+            "local owners hydrate_ms=${hydrateNanos / 1_000_000} reused=$reusedSeries " +
+                "decide_ms=${decisionNanos / 1_000_000} derived=$derivations " +
+                "publish_ms=${publishNanos / 1_000_000} publications=$publications " +
+                "hier_season_calls=$hierarchySeasonCalls hier_episode_calls=$hierarchyEpisodeCalls " +
+                "hier_ms=$hierarchyMs seasons=$seasonsMapped episodes=$episodesMapped " +
+                "series_touched=$seriesIndex",
+        )
+        traceLocalAttribution(publications)
 
-        if (answer == null) {
+        val providerAnswer = trackerRead?.await()
+
+        if (providerAnswer == null) {
 
             UpNextProjection.project(local, emptyList(), today(), now()).cards.let { cards ->
                 publishCards(cards, profileId, resolution, label = "local", startedAt = startedAt, authoritative = true)
@@ -267,7 +531,7 @@ class HomeUpNextStateHolder(
             )
             return
         }
-        val projected = UpNextProjection.project(local, answer.candidates, today(), now())
+        val projected = UpNextProjection.project(local, providerAnswer.candidates, today(), now())
         val projectedCards = projected.cards
 
         val unresolvedByReason = projected.unresolved
@@ -295,8 +559,8 @@ class HomeUpNextStateHolder(
                 UpNextRowState.Loaded(projectedCards.map { card -> toRowCard(card, enrichmentFor(card)) })
             }
 
-            !answer.resolved && hydratedSeries == 0 -> UpNextRowState.Failed(
-                answer.note ?: "Could not load Up Next.",
+            !providerAnswer.resolved -> UpNextRowState.Failed(
+                providerAnswer.note ?: "Could not load Up Next.",
             )
             else -> UpNextRowState.Empty
         }
@@ -305,7 +569,7 @@ class HomeUpNextStateHolder(
             row,
             profileId,
             resolution,
-            note = if (projectedCards.isNotEmpty()) answer.note else null,
+            note = if (projectedCards.isNotEmpty()) providerAnswer.note else null,
         )
         trace("done row=${row::class.simpleName} total_ms=${System.currentTimeMillis() - startedAt}")
     }
@@ -325,8 +589,8 @@ class HomeUpNextStateHolder(
         profileId: String,
         resolution: UpNextSourceResolution,
         note: String? = null,
-    ) {
-        val key = LoadKey(profileId, resolution.effective, accountFor(resolution.effective))
+    ) = publishMutex.withLock {
+        val key = partitionFor(profileId, resolution)
         val current = _state.value
         val keepVisible = row === UpNextRowState.Loading &&
             key == publishedKey &&
@@ -343,11 +607,24 @@ class HomeUpNextStateHolder(
         )
     }
 
-    private suspend fun episodesOf(hierarchy: CanonicalShowHierarchy, seriesId: TitleId): List<UpNextEpisode> {
-        val seasons = hierarchy.seasonNumbers(seriesId).filter { it > 0 }.sorted()
+    private class HydratedHierarchy(
+        val episodes: List<UpNextEpisode>,
+        val callMs: Long,
+        val seasonCalls: Int,
+        val episodeCalls: Int,
+    )
+
+    private suspend fun episodesOf(
+        hierarchy: CanonicalShowHierarchy,
+        seriesId: TitleId,
+    ): HydratedHierarchy {
+        val startedAt = System.nanoTime()
+        var seasonCalls = 0
+        var episodeCalls = 0
+        val seasons = hierarchy.seasonNumbers(seriesId).also { seasonCalls++ }.filter { it > 0 }.sorted()
         val episodes = ArrayList<UpNextEpisode>()
         for (season in seasons) {
-            hierarchy.episodes(seriesId, season).forEach { episode ->
+            hierarchy.episodes(seriesId, season).also { episodeCalls++ }.forEach { episode ->
                 if (episode.seasonNumber <= 0) return@forEach
                 val release = parseRelease(episode.released)
                 episodes += UpNextEpisode(
@@ -360,7 +637,12 @@ class HomeUpNextStateHolder(
                 )
             }
         }
-        return episodes
+        return HydratedHierarchy(
+            episodes = episodes,
+            callMs = (System.nanoTime() - startedAt) / 1_000_000,
+            seasonCalls = seasonCalls,
+            episodeCalls = episodeCalls,
+        )
     }
 
     private fun parseRelease(raw: String?): Pair<LocalDate?, Instant?> =
@@ -373,71 +655,101 @@ class HomeUpNextStateHolder(
         val resolved: Boolean,
     )
 
-    private suspend fun readTrackerAnswer(
+    private fun publishCachedAnswer(
         profileId: String,
         tracker: UpNextSource.Tracker,
         resolution: UpNextSourceResolution,
-        earlyEvidence: List<UpNextSeriesEvidence>,
+        evidence: List<UpNextSeriesEvidence>,
         startedAt: Long,
-    ): TrackerAnswer {
+    ): List<UpNextTrackerCandidate> {
+        val candidates = cachedCandidatesFor(profileId, tracker, resolution)
+        publishCandidates(
+            profileId = profileId,
+            resolution = resolution,
+            evidence = evidence,
+            candidates = candidates,
+            label = "cached",
+            startedAt = startedAt,
+        )
+        return candidates
+    }
+
+    private fun cachedCandidatesFor(
+        profileId: String,
+        tracker: UpNextSource.Tracker,
+        resolution: UpNextSourceResolution,
+    ): List<UpNextTrackerCandidate> {
         val account = accountFor(resolution.effective)
         val cached = cacheStore?.let { store ->
             runCatching { store.read(profileId, tracker.trackerId, account) }.getOrNull()
         }
-        publishCandidates(
-            profileId = profileId,
-            resolution = resolution,
-            evidence = earlyEvidence,
-            candidates = cached?.candidates.orEmpty(),
-            label = "cached",
-            startedAt = startedAt,
-        )
+        return cached?.candidates.orEmpty()
+    }
+
+    private suspend fun readTrackerVisit(
+        profileId: String,
+        tracker: UpNextSource.Tracker,
+        resolution: UpNextSourceResolution,
+        cachedCandidates: List<UpNextTrackerCandidate>,
+    ): TrackerAnswer {
+        val account = accountFor(resolution.effective)
+
+        val partition = partitionFor(profileId, resolution)
+        heldAnswers[partition]?.let { held ->
+            trace("provider answer reused partition=${sourceLabel(resolution)}")
+            return held
+        }
+
+        trace("cross-visit reuse refused reason=${UpNextAnswerReuse.refusal}")
         val readMs = System.currentTimeMillis()
         val outcome = withContext(ioDispatcher) { readTracker(tracker.trackerId) }
         trace("read outcome=${outcome::class.simpleName} ms=${System.currentTimeMillis() - readMs}")
         val (candidates, note) = when (outcome) {
             is TrackerRead.Resolved -> {
 
-                cacheStore?.let { store ->
-                    runCatching {
-                        store.write(
-                            UpNextCachedAnswer(
-                                profileId = profileId,
-                                trackerId = tracker.trackerId,
-                                accountLabel = account,
-                                fetchedAt = Instant.now(),
-                                candidates = outcome.candidates,
-                            ),
-                        )
-                        store.clearOtherAccounts(profileId, tracker.trackerId, account)
+                withContext(ioDispatcher) {
+                    cacheStore?.let { store ->
+                        runCatching {
+                            store.write(
+                                UpNextCachedAnswer(
+                                    profileId = profileId,
+                                    trackerId = tracker.trackerId,
+                                    accountLabel = account,
+
+                                    fetchedAt = now(),
+                                    candidates = outcome.candidates,
+
+                                    changeEvidence = null,
+                                ),
+                            )
+                            store.clearOtherAccounts(profileId, tracker.trackerId, account)
+                        }
                     }
                 }
                 outcome.candidates to null
             }
             is TrackerRead.Revoked -> {
 
-                cacheStore?.let { store ->
-                    runCatching { store.clearAccount(profileId, tracker.trackerId, account) }
+                withContext(ioDispatcher) {
+                    cacheStore?.let { store ->
+                        runCatching { store.clearAccount(profileId, tracker.trackerId, account) }
+                    }
                 }
                 emptyList<UpNextTrackerCandidate>() to outcome.reason
             }
             is TrackerRead.Unavailable -> {
 
-                cached?.candidates.orEmpty() to outcome.reason
+                cachedCandidates to outcome.reason
             }
         }
-        if (outcome is TrackerRead.Resolved) {
-            publishCandidates(
-                profileId = profileId,
-                resolution = resolution,
-                evidence = earlyEvidence,
-                candidates = candidates,
-                label = "tracker",
-                startedAt = startedAt,
-            )
+        return TrackerAnswer(candidates, note, outcome is TrackerRead.Resolved).also { answer ->
+
+            if (answer.resolved) heldAnswers[partition] = answer
         }
-        return TrackerAnswer(candidates, note, outcome is TrackerRead.Resolved)
     }
+
+    private fun partitionFor(profileId: String, resolution: UpNextSourceResolution): LoadKey =
+        LoadKey(profileId, resolution.effective, accountFor(resolution.effective))
 
     private fun publishCandidates(
         profileId: String,
@@ -458,8 +770,18 @@ class HomeUpNextStateHolder(
         val activityAt: Instant? = null,
     )
 
-    private suspend fun ledgerStates(): Map<TitleId, LedgerSeries> {
+    private class LedgerRead(
+        val series: Map<TitleId, LedgerSeries>,
+        val flowMs: Long,
+        val groupMs: Long,
+        val rows: Int,
+    )
+
+    private suspend fun ledgerStates(): LedgerRead {
+        val flowAt = System.nanoTime()
         val states = runCatching { watchStates.observeAll().first() }.getOrDefault(emptyList())
+        val flowMs = (System.nanoTime() - flowAt) / 1_000_000
+        val groupAt = System.nanoTime()
         val bySeries = linkedMapOf<TitleId, MutableMap<WatchKey, WatchStatus>>()
         val activity = mutableMapOf<TitleId, Instant>()
         states.forEach { state ->
@@ -476,9 +798,15 @@ class HomeUpNextStateHolder(
                 if (current == null || at.isAfter(current)) activity[seriesId] = at
             }
         }
-        return bySeries.mapValues { (seriesId, watched) ->
+        val series = bySeries.mapValues { (seriesId, watched) ->
             LedgerSeries(watchStates = watched, activityAt = activity[seriesId])
         }
+        return LedgerRead(
+            series = series,
+            flowMs = flowMs,
+            groupMs = (System.nanoTime() - groupAt) / 1_000_000,
+            rows = states.size,
+        )
     }
 
     private fun ledgerEvidence(states: Map<TitleId, LedgerSeries>): List<UpNextSeriesEvidence> =
@@ -496,17 +824,109 @@ class HomeUpNextStateHolder(
             )
         }
 
-    private suspend fun localEvidenceFor(seriesId: TitleId, ledger: LedgerSeries): UpNextSeriesEvidence? {
-        val hierarchy = this.hierarchy ?: return null
-        val episodes = runCatching { episodesOf(hierarchy, seriesId) }.getOrNull().orEmpty()
-        if (episodes.isEmpty()) return null
-        return UpNextSeriesEvidence(
-            seriesTitleId = seriesId,
-            seriesTitle = null,
-            episodes = episodes,
-            watchStates = ledger.watchStates,
-            activityAt = ledger.activityAt,
+    private suspend fun localEvidenceFor(
+        profileId: String,
+        seriesId: TitleId,
+        ledger: LedgerSeries,
+        enqueuedAt: Long = System.nanoTime(),
+    ): SeriesEvidence {
+
+        val entryAt = System.nanoTime()
+        val waitMs = (entryAt - enqueuedAt) / 1_000_000
+        attribution.seriesDispatchMs += waitMs
+        val built = buildLocalEvidence(profileId, seriesId, ledger)
+        built.waitMs = waitMs
+        built.insideMs = (System.nanoTime() - entryAt) / 1_000_000
+        return built
+    }
+
+    private suspend fun buildLocalEvidence(
+        profileId: String,
+        seriesId: TitleId,
+        ledger: LedgerSeries,
+    ): SeriesEvidence {
+        val getAt = System.nanoTime()
+        val retained = runCatching { episodeEvidenceRetention.get(profileId, seriesId) }.getOrNull()
+        attribution.retentionGetMs += (System.nanoTime() - getAt) / 1_000_000
+        if (retained != null) {
+            val sufficiencyAt = System.nanoTime()
+            val answers = retainedEvidenceAnswers(seriesId, retained, ledger)
+            attribution.sufficiencyMs += (System.nanoTime() - sufficiencyAt) / 1_000_000
+            attribution.sufficiencyChecks++
+            if (answers) {
+                return SeriesEvidence(
+                    evidence = UpNextSeriesEvidence(
+                        seriesTitleId = seriesId,
+                        seriesTitle = null,
+                        episodes = retained,
+                        watchStates = ledger.watchStates,
+                        activityAt = ledger.activityAt,
+                    ),
+                    reused = true,
+                )
+            }
+        }
+        val hierarchy = this.hierarchy ?: return SeriesEvidence(evidence = null, reused = false)
+        val buildAt = System.nanoTime()
+        val hydrated = runCatching { episodesOf(hierarchy, seriesId) }.getOrNull()
+        attribution.episodesBuildMs += (System.nanoTime() - buildAt) / 1_000_000
+        if (hydrated == null) return SeriesEvidence(evidence = null, reused = false)
+        if (hydrated.episodes.isEmpty()) return SeriesEvidence(evidence = null, reused = false, hydrated = hydrated)
+        val putAt = System.nanoTime()
+        runCatching { episodeEvidenceRetention.put(profileId, seriesId, hydrated.episodes) }
+        attribution.retentionPutMs += (System.nanoTime() - putAt) / 1_000_000
+        return SeriesEvidence(
+            evidence = UpNextSeriesEvidence(
+                seriesTitleId = seriesId,
+                seriesTitle = null,
+                episodes = hydrated.episodes,
+                watchStates = ledger.watchStates,
+                activityAt = ledger.activityAt,
+            ),
+            reused = false,
+            hydrated = hydrated,
         )
+    }
+
+    private class SeriesEvidence(
+        val evidence: UpNextSeriesEvidence?,
+        val reused: Boolean,
+        val hydrated: HydratedHierarchy? = null,
+    ) {
+
+        var waitMs: Long = 0
+
+        var insideMs: Long = 0
+    }
+
+    private fun retainedEvidenceAnswers(
+        seriesId: TitleId,
+        retained: List<UpNextEpisode>,
+        ledger: LedgerSeries,
+    ): Boolean {
+        if (retained.isEmpty()) return false
+        val coordinates = retained.mapTo(HashSet()) { episode -> episode.seasonNumber to episode.episodeNumber }
+        val covered = ledger.watchStates.keys.all { key ->
+            val season = key.seasonNumber
+            val episode = key.episodeNumber
+            season == null || episode == null || (season to episode) in coordinates
+        }
+        if (!covered) return false
+        val decision = UpNextProjection.decideSeries(
+            evidence = UpNextSeriesEvidence(
+                seriesTitleId = seriesId,
+                seriesTitle = null,
+                episodes = retained,
+                watchStates = ledger.watchStates,
+                activityAt = ledger.activityAt,
+            ),
+            candidate = null,
+            today = today(),
+            now = now(),
+        )
+        if (decision.card != null) return true
+        return decision.reason == dev.infusion.core.domain.upnext.UpNextUnresolvedReason.NOT_YET_AIRED ||
+            decision.reason == dev.infusion.core.domain.upnext.UpNextUnresolvedReason.UNFINISHED_LOCAL_EPISODE
     }
 
     private suspend fun readTracker(trackerId: String): TrackerRead {
@@ -557,7 +977,8 @@ class HomeUpNextStateHolder(
                             pagesRead, records, candidates.size, unproven, ambiguous,
                             pageMalformed, pageSkipped, completedBySeam, capReached = false,
                         )
-                        return TrackerRead.Resolved(candidates)
+
+                        return TrackerRead.Resolved(candidates, complete = pageMalformed == 0)
                     }
                     if (page == MAX_PAGES) capReached = true
                     page++
@@ -574,7 +995,8 @@ class HomeUpNextStateHolder(
             pagesRead, records, candidates.size, unproven, ambiguous,
             pageMalformed, pageSkipped, completedBySeam, capReached,
         )
-        return TrackerRead.Resolved(candidates)
+
+        return TrackerRead.Resolved(candidates, complete = false)
     }
 
     private fun traceBoundary(
@@ -659,28 +1081,102 @@ class HomeUpNextStateHolder(
         label: String,
         startedAt: Long,
         authoritative: Boolean = false,
-    ): Boolean {
-        if (cards.isEmpty()) return false
-        if (!authoritative && wouldDropShownSeries(cards, profileId, resolution)) {
+    ): Boolean = publishMutex.withLock {
+        attribution.pubAttempts++
+        if (cards.isEmpty()) return@withLock false
+        val dropAt = System.nanoTime()
+        val wouldDrop = !authoritative && wouldDropShownSeries(cards, profileId, resolution)
+        attribution.pubWouldDropMs += (System.nanoTime() - dropAt) / 1_000_000
+        if (wouldDrop) {
 
+            attribution.pubWithheld++
             trace(
                 "published $label withheld-shrink cards=${cards.size} " +
                     "ms=${System.currentTimeMillis() - startedAt}",
             )
-            return false
+            return@withLock false
         }
         currentCards = cards
 
+        val seedAt = System.nanoTime()
         seedRetained(profileId, cards)
+        attribution.pubSeedMs += (System.nanoTime() - seedAt) / 1_000_000
+        val buildAt = System.nanoTime()
+        val priorRow = (_state.value.row as? UpNextRowState.Loaded)?.cards
         val row = cards.map { card -> toRowCard(card, enrichmentFor(card)) }
+        attribution.pubRowBuildMs += (System.nanoTime() - buildAt) / 1_000_000
+        attribution.rowCardsBuilt += row.size
+        val emitAt = System.nanoTime()
+        if (row == priorRow) attribution.pubSameVisible++
         publish(UpNextRowState.Loaded(row), profileId, resolution)
+        attribution.pubEmitMs += (System.nanoTime() - emitAt) / 1_000_000
+        attribution.pubEmitted++
+        if (Thread.currentThread().name == MAIN_THREAD_NAME) attribution.pubMainThread++
         trace(
             "published $label cards=${row.size} " +
                 "artwork=${row.count { it.preview.artwork != null }} " +
                 "ms=${System.currentTimeMillis() - startedAt}",
         )
+        val wakeAt = System.nanoTime()
         startPresentation(profileId, resolution, startedAt)
-        return true
+        attribution.pubWakeMs += (System.nanoTime() - wakeAt) / 1_000_000
+        true
+    }
+
+    private fun recordPublicationShape(
+        previous: List<dev.infusion.core.domain.upnext.UpNextCard>?,
+        cards: List<dev.infusion.core.domain.upnext.UpNextCard>,
+    ) {
+        val before = previous?.associateBy { it.key }.orEmpty()
+        var added = 0
+        var replaced = 0
+        cards.forEach { card ->
+            val held = before[card.key]
+            when {
+                held == null -> added++
+                held != card -> replaced++
+            }
+        }
+        attribution.pubAddedKeys += added
+        attribution.pubReplacedKeys += replaced
+        attribution.pubRemovedKeys += (before.size - (cards.size - added)).coerceAtLeast(0)
+    }
+
+    private fun traceLocalAttribution(publications: Int) {
+        trace(
+            "attr ledger rows=${attribution.ledgerRows} dispatch_ms=${attribution.ledgerDispatchMs} " +
+                "flow_ms=${attribution.ledgerFlowMs} group_ms=${attribution.ledgerGroupMs} " +
+                "evidence_ms=${attribution.ledgerEvidenceMs}",
+        )
+        trace(
+            "attr series dispatch_ms=${attribution.seriesDispatchMs} " +
+                "resume_ms=${attribution.hydrateResumeMs} " +
+                "retention_get_ms=${attribution.retentionGetMs} " +
+                "sufficiency_checks=${attribution.sufficiencyChecks} " +
+                "sufficiency_ms=${attribution.sufficiencyMs} " +
+                "hydrate_build_ms=${attribution.episodesBuildMs} " +
+                "retention_put_ms=${attribution.retentionPutMs} " +
+                "snapshot_builds=${attribution.snapshotBuilds} snapshot_ms=${attribution.snapshotMs} " +
+                "decision_calls=${attribution.decisionCalls} " +
+                "order_runs=${attribution.orderRuns} order_ms=${attribution.orderMs} " +
+                "seed_lookups=${attribution.seedLookups} seed_hits=${attribution.seedHits} " +
+                "seed_lookup_ms=${attribution.seedLookupMs}",
+        )
+        trace(
+            "attr publish attempts=${attribution.pubAttempts} emitted=${attribution.pubEmitted} " +
+                "withheld=${attribution.pubWithheld} same_visible=${attribution.pubSameVisible} " +
+                "main_thread=${attribution.pubMainThread} added_keys=${attribution.pubAddedKeys} " +
+                "removed_keys=${attribution.pubRemovedKeys} " +
+                "replaced_keys=${attribution.pubReplacedKeys} " +
+                "would_drop_ms=${attribution.pubWouldDropMs} seed_ms=${attribution.pubSeedMs} " +
+                "row_build_ms=${attribution.pubRowBuildMs} row_cards=${attribution.rowCardsBuilt} " +
+                "row_reused=${attribution.rowCardsReused} emit_ms=${attribution.pubEmitMs} " +
+                "wake_ms=${attribution.pubWakeMs} publications=$publications",
+        )
+        trace(
+            "attr present issued=${attribution.enrichIssued.get()} " +
+                "ms=${attribution.enrichMs.get()} wakes=${attribution.presentWakes.get()}",
+        )
     }
 
     private fun wouldDropShownSeries(
@@ -711,7 +1207,6 @@ class HomeUpNextStateHolder(
 
         resolvedThisVisit.clear()
         val cards = currentCards
-        seedRetained(profileId, cards)
 
         val presentedCount = presentationWindow?.count?.value ?: Int.MAX_VALUE
         val missing = cards.withIndex().count { (index, card) ->
@@ -730,6 +1225,7 @@ class HomeUpNextStateHolder(
         val window = presentationWindow
         presentJob = scope.launch {
             while (loadKey == visit) {
+                attribution.presentWakes.incrementAndGet()
 
                 val publishedAtRoundStart = publicationTick.value
                 val inWindow = currentCards.withIndex().filter { (index, card) ->
@@ -750,7 +1246,8 @@ class HomeUpNextStateHolder(
                             if (!needsPresentation(card.key)) return@launch
 
                             val result = enrichGate.withPermit {
-                                runCatching {
+                                val enrichAt = System.nanoTime()
+                                val answer = runCatching {
                                     enrich(
                                         UpNextCardRequest(
                                             card.seriesTitleId,
@@ -759,6 +1256,9 @@ class HomeUpNextStateHolder(
                                         ),
                                     )
                                 }.getOrDefault(UpNextCardEnrichment())
+                                attribution.enrichMs.addAndGet((System.nanoTime() - enrichAt) / 1_000_000)
+                                attribution.enrichIssued.incrementAndGet()
+                                answer
                             }
 
                             val merged = enriched.merge(card.key, result) { held, fresh ->
@@ -808,14 +1308,25 @@ class HomeUpNextStateHolder(
     private fun needsPresentation(cardKey: String): Boolean =
         cardKey !in resolvedThisVisit && enriched[cardKey]?.settlesArtwork != true
 
+    private val seedAsked: MutableSet<String> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     private fun seedRetained(
         profileId: String,
         cards: List<dev.infusion.core.domain.upnext.UpNextCard>,
     ) {
         val retention = presentationRetention ?: return
         cards.forEach { card ->
-            if (!enriched.containsKey(card.key)) {
-                retention.get(profileId, card.key)?.let { retained -> enriched[card.key] = retained }
+            if (enriched.containsKey(card.key)) return@forEach
+            if (!seedAsked.add(card.key)) return@forEach
+
+            attribution.seedLookups++
+            val lookupAt = System.nanoTime()
+            val retained = retention.get(profileId, card.key)
+            attribution.seedLookupMs += (System.nanoTime() - lookupAt) / 1_000_000
+            if (retained != null) {
+                attribution.seedHits++
+                enriched[card.key] = retained
             }
         }
     }
@@ -889,7 +1400,11 @@ class HomeUpNextStateHolder(
         }
 
     private sealed interface TrackerRead {
-        data class Resolved(val candidates: List<UpNextTrackerCandidate>) : TrackerRead
+
+        data class Resolved(
+            val candidates: List<UpNextTrackerCandidate>,
+            val complete: Boolean = true,
+        ) : TrackerRead
 
         data class Revoked(val reason: String) : TrackerRead
 
@@ -905,6 +1420,8 @@ class HomeUpNextStateHolder(
         const val LOCAL_ONLY_LABEL: String = "Local only"
         const val UNAVAILABLE_IDENTITY: String = "identity unavailable"
         const val UNAVAILABLE_TRANSPORT: String = "provider unavailable"
+
+        const val MAIN_THREAD_NAME: String = "main"
     }
 }
 
@@ -955,6 +1472,45 @@ interface UpNextPresentationRetention {
     fun get(profileId: String, cardKey: String): UpNextCardEnrichment?
 
     fun put(profileId: String, cardKey: String, enrichment: UpNextCardEnrichment)
+}
+
+interface UpNextEpisodeEvidenceRetention {
+
+    fun get(profileId: String, seriesTitleId: TitleId): List<UpNextEpisode>?
+
+    fun put(profileId: String, seriesTitleId: TitleId, episodes: List<UpNextEpisode>)
+}
+
+class InMemoryUpNextEpisodeEvidenceRetention(
+    private val localeToken: () -> String = { "" },
+    private val limit: Int = DEFAULT_LIMIT,
+) : UpNextEpisodeEvidenceRetention {
+
+    private val entries: MutableMap<String, List<UpNextEpisode>> =
+        java.util.Collections.synchronizedMap(
+            object : LinkedHashMap<String, List<UpNextEpisode>>(128, 0.75f, true) {
+                override fun removeEldestEntry(
+                    eldest: MutableMap.MutableEntry<String, List<UpNextEpisode>>,
+                ): Boolean = size > limit
+            },
+        )
+
+    override fun get(profileId: String, seriesTitleId: TitleId): List<UpNextEpisode>? =
+        entries["${localeToken()}\u0000$profileId\u0000${seriesTitleId.value}"]
+
+    override fun put(profileId: String, seriesTitleId: TitleId, episodes: List<UpNextEpisode>) {
+        if (episodes.isEmpty()) return
+        entries["${localeToken()}\u0000$profileId\u0000${seriesTitleId.value}"] = episodes
+    }
+
+    companion object {
+
+        const val DEFAULT_LIMIT: Int = 1024
+
+        val Shared: InMemoryUpNextEpisodeEvidenceRetention by lazy {
+            InMemoryUpNextEpisodeEvidenceRetention()
+        }
+    }
 }
 
 data class UpNextRowCard(

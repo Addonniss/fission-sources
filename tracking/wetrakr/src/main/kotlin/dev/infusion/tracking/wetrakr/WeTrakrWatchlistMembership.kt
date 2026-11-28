@@ -38,6 +38,8 @@ class WeTrakrWatchlistMembership(
         val records = ArrayList<WatchlistRemoteRecord>()
         var malformed = 0
         var hasMore = false
+        var answered = 0
+        var firstFailure: WeTrakrOutcome? = null
         val incomplete = LinkedHashSet<WatchlistRemoteKind>()
         for (target in WeTrakrWatchlistMapping.READ_TARGETS) {
             val kind = if (target == WeTrakrWatchlistMapping.TARGET_SHOWS) {
@@ -51,6 +53,7 @@ class WeTrakrWatchlistMembership(
                 is WeTrakrOutcome.Success -> {
                     val parsed = WeTrakrWatchlistMapping.records(outcome.response.body, target)
                         ?: return TrackingInboundOutcome.Rejected(SHAPE_CHANGED)
+                    answered++
                     records += parsed.records
                     malformed += parsed.malformed
                     if (
@@ -66,7 +69,18 @@ class WeTrakrWatchlistMembership(
                 }
                 is WeTrakrOutcome.Unauthorized -> return TrackingInboundOutcome.Unauthorized(outcome.reason)
 
-                is WeTrakrOutcome.Retry, is WeTrakrOutcome.Rejected -> incomplete += kind
+                is WeTrakrOutcome.Retry, is WeTrakrOutcome.Rejected -> {
+                    if (firstFailure == null) firstFailure = outcome
+                    incomplete += kind
+                }
+            }
+        }
+        if (answered == 0) {
+
+            return when (val failure = firstFailure) {
+                is WeTrakrOutcome.Retry -> TrackingInboundOutcome.Unavailable(failure.reason)
+                is WeTrakrOutcome.Rejected -> TrackingInboundOutcome.Rejected(failure.reason)
+                else -> TrackingInboundOutcome.Rejected(SHAPE_CHANGED)
             }
         }
         return TrackingInboundOutcome.Ok(

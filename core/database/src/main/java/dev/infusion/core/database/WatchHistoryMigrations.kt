@@ -10,4 +10,10 @@ object WatchHistoryMigrations {
             db.execSQL("ALTER TABLE `watch_states` ADD COLUMN `watched_at_ms` INTEGER")
         }
     }
+
+    val MIGRATION_25_26 = object : Migration(25, 26) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `watch_events` ADD COLUMN `provider_play_id` TEXT")
+        }
+    }
 }

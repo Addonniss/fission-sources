@@ -97,7 +97,7 @@ data class TrackingScrobbleEvent(
 sealed interface TrackingDeliveryResult {
     data object Delivered : TrackingDeliveryResult
 
-    data class Retryable(val reason: String) : TrackingDeliveryResult
+    data class Retryable(val reason: String, val retryAfterMs: Long? = null) : TrackingDeliveryResult
 
     data class Rejected(val reason: String) : TrackingDeliveryResult
 

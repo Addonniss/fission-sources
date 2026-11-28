@@ -61,11 +61,16 @@ data class TrackingWatchedCacheEntry(
     val verdict: TrackingWatchedCacheVerdict,
     val watchedAt: Instant? = null,
     val resolvedUnderGate: Instant? = null,
+
+    val coverageTakenAt: Instant? = null,
 ) {
     init {
         require(key.isNotBlank()) { "a cache entry requires its canonical key" }
         require(verdict == TrackingWatchedCacheVerdict.WATCHED || watchedAt == null) {
             "only a watched cache entry carries an observation timestamp"
+        }
+        require(verdict == TrackingWatchedCacheVerdict.NOT_WATCHED || coverageTakenAt == null) {
+            "only a negative cache entry carries bulk coverage evidence"
         }
     }
 }
@@ -103,6 +108,10 @@ data class TrackingWatchedLookupResult(
 
     val cached: Int = 0,
 
+    val knownLocally: Int = 0,
+
+    val reasked: Int = 0,
+
     val unresolved: Int = 0,
 
     val queried: Int = 0,
@@ -112,6 +121,12 @@ data class TrackingWatchedLookupResult(
     val imported: Int = 0,
 
     val notWatched: Int = 0,
+
+    val notWatchedLocally: Int = 0,
+
+    val deferredForBulkSync: Int = 0,
+
+    val gateRefusals: Map<String, Int> = emptyMap(),
 
     val skipped: Map<TrackingInboundSkipReason, Int> = emptyMap(),
 

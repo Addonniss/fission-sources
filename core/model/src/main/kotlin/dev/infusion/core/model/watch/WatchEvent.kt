@@ -39,6 +39,8 @@ sealed class WatchEvent {
         override val sessionId: SessionId? = null,
         override val positionMs: Long? = null,
         override val durationMs: Long? = null,
+
+        val providerPlayId: String? = null,
     ) : WatchEvent() {
         init {
             require(

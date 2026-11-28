@@ -55,30 +55,8 @@ object WeTrakrScrobbleMapping {
         val timestamp = instantOf(occurredAt)
         val body = JSONObject().put("allow_rewatch", false)
         when (media.kind) {
-            TrackingMediaKind.MOVIE -> {
-                val item = JSONObject()
-                    .put("ids", idsOf(media.externalIds))
-                    .put("status", STATUS_WATCHED)
-                    .put("tracked_at", timestamp)
-                media.title?.takeIf { it.isNotBlank() }?.let { item.put("title", it) }
-                media.year?.let { item.put("year", it) }
-                body.put("movies", JSONArray().put(item))
-            }
-            TrackingMediaKind.SHOW -> {
-                val episode = JSONObject()
-                    .put("number", media.episodeNumber)
-                    .put("status", STATUS_WATCHED)
-                    .put("tracked_at", timestamp)
-                val season = JSONObject()
-                    .put("number", media.seasonNumber)
-                    .put("episodes", JSONArray().put(episode))
-                val show = JSONObject()
-                    .put("ids", idsOf(media.externalIds))
-                    .put("seasons", JSONArray().put(season))
-                media.title?.takeIf { it.isNotBlank() }?.let { show.put("title", it) }
-                media.year?.let { show.put("year", it) }
-                body.put("shows", JSONArray().put(show))
-            }
+            TrackingMediaKind.MOVIE -> body.put("movies", JSONArray().put(movieItem(media, timestamp)))
+            TrackingMediaKind.SHOW -> body.put("shows", JSONArray().put(showItem(media, timestamp)))
         }
         return WeTrakrRequest(
             method = WeTrakrMethod.POST,
@@ -86,6 +64,135 @@ object WeTrakrScrobbleMapping {
             json = body.toString(),
             authenticated = true,
         )
+    }
+
+    class WatchedWriteItem internal constructor(
+
+        val item: JSONObject,
+
+        val identity: String?,
+    )
+
+    fun watchedWriteItems(events: List<TrackingScrobbleEvent>): List<WatchedWriteItem>? {
+        val items = ArrayList<WatchedWriteItem>(events.size)
+        val identities = HashSet<String>()
+        for (event in events) {
+            if (event.action != TrackingScrobbleAction.MARK_WATCHED) return null
+            if (event.media.kind != TrackingMediaKind.MOVIE) return null
+            val item = movieItem(event.media, instantOf(event.occurredAt))
+            val identity = identityOf(item) ?: return null
+
+            if (!identities.add(identity)) return null
+            items += WatchedWriteItem(item = item, identity = identity)
+        }
+        return items
+    }
+
+    fun watchedBatchWriteRequest(items: List<WatchedWriteItem>): WeTrakrRequest {
+        require(items.isNotEmpty()) { "a watched batch write is never sent empty" }
+        val movies = JSONArray()
+        for (item in items) movies.put(item.item)
+        val body = JSONObject()
+            .put("allow_rewatch", false)
+            .put("movies", movies)
+        return WeTrakrRequest(
+            method = WeTrakrMethod.POST,
+            path = WeTrakrHttpClient.TRACKING_WRITE_PATH,
+            json = body.toString(),
+            authenticated = true,
+        )
+    }
+
+    fun watchedBatchOutcomes(
+        response: WeTrakrHttpResponse,
+        items: List<WatchedWriteItem>,
+    ): List<WeTrakrWriteOutcome> {
+        val body = runCatching { JSONObject(response.body) }.getOrNull()
+            ?: return List(items.size) { WeTrakrWriteOutcome.Rejected(UNREADABLE_ANSWER) }
+
+        val refused = failuresIn(body.optJSONObject(KEY_NOT_FOUND))
+        val errored = failuresIn(body.optJSONObject(KEY_ERRORED))
+        val successCapacity = counted(body.optJSONObject(KEY_ADDED)) + counted(body.optJSONObject(KEY_EXISTING))
+
+        val settled = items.count { item ->
+            val identity = item.identity ?: return@count true
+            identity !in refused && identity !in errored
+        }
+        val attributable = successCapacity >= settled
+
+        return items.map { item ->
+            val identity = item.identity
+            when {
+                identity == null -> WeTrakrWriteOutcome.Rejected(UNREADABLE_ANSWER)
+                identity in refused -> WeTrakrWriteOutcome.Rejected(NOT_FOUND_REASON)
+                identity in errored -> {
+                    val reason = redact(errored.getValue(identity))
+                    if (isAlreadyHeld(reason)) {
+                        WeTrakrWriteOutcome.AlreadyHeld
+                    } else {
+                        WeTrakrWriteOutcome.Rejected(reason)
+                    }
+                }
+                attributable -> WeTrakrWriteOutcome.Delivered
+                else -> WeTrakrWriteOutcome.Rejected(UNREADABLE_ANSWER)
+            }
+        }
+    }
+
+    private fun movieItem(media: TrackingMediaReference, timestamp: String): JSONObject {
+        val item = JSONObject()
+            .put("ids", idsOf(media.externalIds))
+            .put("status", STATUS_WATCHED)
+            .put("tracked_at", timestamp)
+        media.title?.takeIf { it.isNotBlank() }?.let { item.put("title", it) }
+        media.year?.let { item.put("year", it) }
+        return item
+    }
+
+    private fun showItem(media: TrackingMediaReference, timestamp: String): JSONObject {
+        val episode = JSONObject()
+            .put("number", media.episodeNumber)
+            .put("status", STATUS_WATCHED)
+            .put("tracked_at", timestamp)
+        val season = JSONObject()
+            .put("number", media.seasonNumber)
+            .put("episodes", JSONArray().put(episode))
+        val show = JSONObject()
+            .put("ids", idsOf(media.externalIds))
+            .put("seasons", JSONArray().put(season))
+        media.title?.takeIf { it.isNotBlank() }?.let { show.put("title", it) }
+        media.year?.let { show.put("year", it) }
+        return show
+    }
+
+    private fun identityOf(item: JSONObject): String? {
+        val ids = item.optJSONObject("ids") ?: return null
+        val imdb = ids.optString("imdb", "").trim()
+        val tmdb = ids.opt("tmdb")?.toString()?.trim().orEmpty()
+        val tvdb = ids.opt("tvdb")?.toString()?.trim().orEmpty()
+        if (imdb.isEmpty() && tmdb.isEmpty() && tvdb.isEmpty()) return null
+        return "imdb=$imdb;tmdb=$tmdb;tvdb=$tvdb"
+    }
+
+    private fun failuresIn(bucket: JSONObject?): Map<String, String> {
+        if (bucket == null) return emptyMap()
+        val found = LinkedHashMap<String, String>()
+        for (type in bucket.keys()) {
+            val arrays = bucket.opt(type)
+            if (arrays !is JSONArray) continue
+            for (index in 0 until arrays.length()) {
+                val item = arrays.optJSONObject(index) ?: continue
+                val identity = identityOf(item) ?: continue
+                found[identity] = item.optString("error", "")
+            }
+        }
+        return found
+    }
+
+    private fun counted(bucket: JSONObject?): Int {
+        if (bucket == null) return 0
+        if (bucket.has("total")) return bucket.optInt("total", 0)
+        return countsIn(bucket)
     }
 
     fun scrobbleOutcome(response: WeTrakrHttpResponse): WeTrakrWriteOutcome {

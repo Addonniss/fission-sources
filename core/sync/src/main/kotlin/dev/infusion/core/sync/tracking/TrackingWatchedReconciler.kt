@@ -8,9 +8,11 @@ import dev.infusion.core.domain.tracking.TrackingWatchedAnswer
 import dev.infusion.core.domain.tracking.TrackingWatchedCacheEntry
 import dev.infusion.core.domain.tracking.TrackingWatchedCacheStore
 import dev.infusion.core.domain.tracking.TrackingWatchedCacheVerdict
+import dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit
 import dev.infusion.core.domain.tracking.TrackingWatchedKeys
 import dev.infusion.core.domain.tracking.TrackingWatchedLookupPort
 import dev.infusion.core.domain.tracking.TrackingWatchedLookupResult
+import dev.infusion.core.domain.tracking.TrackingWatchedNegativeEvidencePort
 import dev.infusion.core.domain.tracking.TrackingWatchedQuery
 import dev.infusion.core.domain.tracking.TrackingWatchedVerdict
 import dev.infusion.core.model.watch.WatchEvent
@@ -53,6 +55,10 @@ class TrackingWatchedReconciler(
 
     private val onPass: (TrackingWatchedLookupResult) -> Unit = {},
 
+    private val negativeEvidence: TrackingWatchedNegativeEvidencePort? = null,
+
+    private val bulkSync: TrackingWatchedBulkSync? = null,
+
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
@@ -62,11 +68,15 @@ class TrackingWatchedReconciler(
         }
         require(maxBatchesPerPass >= 1) { "maxBatchesPerPass must be positive" }
         require(recentWindow >= batchSize) { "the recent window must be able to hold at least one batch" }
+
+        bulkSync?.onSettled(::onBulkSyncSettled)
     }
 
     private val pending = LinkedHashSet<WatchKey>()
 
     private val recent = LinkedHashSet<WatchKey>()
+
+    private val owedAfterActivityMove = LinkedHashSet<WatchKey>()
 
     @Volatile
     private var activityGate: Instant? = null
@@ -107,8 +117,16 @@ class TrackingWatchedReconciler(
         val previous = activityGate
         if (previous != null && !gate.isAfter(previous)) return
         activityGate = gate
+
+        val moved = previous != null
         val rearmed = synchronized(queueLock) {
             val rearm = recent.toList()
+            if (moved) {
+                owedAfterActivityMove.addAll(rearm)
+                while (owedAfterActivityMove.size > MAX_OWED_AFTER_MOVE) {
+                    owedAfterActivityMove.remove(owedAfterActivityMove.first())
+                }
+            }
             pending.addAll(rearm)
             rearm.size
         }
@@ -120,10 +138,18 @@ class TrackingWatchedReconciler(
         synchronized(queueLock) {
             pending.clear()
             recent.clear()
+            owedAfterActivityMove.clear()
         }
         activityGate = null
         flushJob?.cancel()
         flushJob = null
+
+        bulkSync?.reset(providerId)
+    }
+
+    fun onBulkSyncSettled() {
+        val queued = synchronized(queueLock) { pending.isNotEmpty() }
+        if (queued) scheduleFlush()
     }
 
     fun clear() {
@@ -135,6 +161,12 @@ class TrackingWatchedReconciler(
         if (!runCatching { enabled() }.getOrDefault(false)) {
 
             return TrackingWatchedLookupResult()
+        }
+
+        if (bulkSync?.inProgress(providerId) == true) {
+            return TrackingWatchedLookupResult(
+                deferredForBulkSync = synchronized(queueLock) { pending.size },
+            )
         }
         val demanded = synchronized(queueLock) {
             val taken = pending.toList()
@@ -165,14 +197,34 @@ class TrackingWatchedReconciler(
 
         val questions = LinkedHashMap<String, Question>()
         var cacheHits = 0
+        var knownLocally = 0
+        var reasked = 0
         var unresolved = 0
+        var locallyNotWatched = 0
+
+        val gateRefusals = LinkedHashMap<String, Int>()
         val unresolvedEntries = ArrayList<TrackingWatchedCacheEntry>()
+        val gatedEntries = ArrayList<TrackingWatchedCacheEntry>()
         for (key in demanded) {
             val cacheKey = TrackingWatchedKeys.of(key)
             val entry = cached[cacheKey]
-            if (entry != null && !isStale(entry)) {
+
+            val gatedNegative = entry != null &&
+                entry.verdict == TrackingWatchedCacheVerdict.NOT_WATCHED &&
+                entry.coverageTakenAt != null
+            if (entry != null && !isStale(entry) && (!gatedNegative || stillAuthorised(entry, key))) {
                 cacheHits++
                 continue
+            }
+
+            val owedAfterMove = synchronized(queueLock) { key in owedAfterActivityMove }
+            val settledLocally = locallyWatched(key)
+            if (settledLocally) {
+                if (!owedAfterMove) {
+                    knownLocally++
+                    continue
+                }
+                reasked++
             }
             val reference = runCatching { resolver.resolve(key) }.getOrNull()
             if (reference == null) {
@@ -180,6 +232,30 @@ class TrackingWatchedReconciler(
                 unresolved++
                 unresolvedEntries += TrackingWatchedCacheEntry(cacheKey, TrackingWatchedCacheVerdict.UNRESOLVED)
                 continue
+            }
+
+            val gate = negativeEvidence
+            if (!settledLocally && gate != null) {
+
+                val evidence = runCatching {
+                    gate.negativeEvidenceFor(unitOf(key), reference.externalIds, key)
+                }.getOrNull()
+                if (evidence != null && evidence.resolved) {
+                    locallyNotWatched++
+                    gatedEntries += TrackingWatchedCacheEntry(
+                        key = cacheKey,
+                        verdict = TrackingWatchedCacheVerdict.NOT_WATCHED,
+                        resolvedUnderGate = activityGate,
+                        coverageTakenAt = evidence.coverageTakenAt,
+                    )
+
+                    synchronized(queueLock) { owedAfterActivityMove.remove(key) }
+                    continue
+                }
+                if (evidence != null) {
+
+                    synchronized(gateRefusals) { gateRefusals.merge(evidence.reason, 1, Int::plus) }
+                }
             }
             val query = TrackingWatchedQuery(
                 externalIds = reference.externalIds,
@@ -196,7 +272,9 @@ class TrackingWatchedReconciler(
             }
         }
 
-        if (unresolvedEntries.isNotEmpty()) runCatching { cache.put(providerId, unresolvedEntries) }
+        if (unresolvedEntries.isNotEmpty() || gatedEntries.isNotEmpty()) {
+            runCatching { cache.put(providerId, unresolvedEntries + gatedEntries) }
+        }
 
         var imported = 0
         var notWatched = 0
@@ -212,11 +290,15 @@ class TrackingWatchedReconciler(
                 return TrackingWatchedLookupResult(
                     demanded = demanded.size,
                     cached = cacheHits,
+                    knownLocally = knownLocally,
+                    reasked = reasked,
                     unresolved = unresolved,
                     queried = queried,
                     requests = requests,
                     imported = imported,
                     notWatched = notWatched,
+                    notWatchedLocally = locallyNotWatched,
+                    gateRefusals = gateRefusals.toMap(),
                     skipped = skipped,
                 )
             }
@@ -257,6 +339,8 @@ class TrackingWatchedReconciler(
             requests++
             queried += batch.size
             val entries = ArrayList<TrackingWatchedCacheEntry>(batch.size)
+
+            val settled = ArrayList<Question>(batch.size)
             for ((index, question) in batch.withIndex()) {
 
                 val answer = answers.getOrNull(index)
@@ -281,6 +365,7 @@ class TrackingWatchedReconciler(
                                 resolvedUnderGate = activityGate,
                             )
                         }
+                        settled += question
                     }
                     TrackingWatchedVerdict.NOT_WATCHED, TrackingWatchedVerdict.NOT_FOUND -> {
                         notWatched++
@@ -291,11 +376,16 @@ class TrackingWatchedReconciler(
                                 resolvedUnderGate = activityGate,
                             )
                         }
+                        settled += question
                     }
                     TrackingWatchedVerdict.MALFORMED -> count(skipped, TrackingInboundSkipReason.MALFORMED, 1)
                 }
             }
             if (entries.isNotEmpty()) runCatching { cache.put(providerId, entries) }
+            if (settled.isNotEmpty()) {
+
+                synchronized(queueLock) { settled.forEach { question -> owedAfterActivityMove.removeAll(question.keys) } }
+            }
         }
         if (queue.isNotEmpty()) {
 
@@ -304,11 +394,15 @@ class TrackingWatchedReconciler(
         return TrackingWatchedLookupResult(
             demanded = demanded.size,
             cached = cacheHits,
+            knownLocally = knownLocally,
+            reasked = reasked,
             unresolved = unresolved,
             queried = queried,
             requests = requests,
             imported = imported,
             notWatched = notWatched,
+            notWatchedLocally = locallyNotWatched,
+            gateRefusals = gateRefusals.toMap(),
             skipped = skipped,
             failure = failure,
         )
@@ -372,12 +466,32 @@ class TrackingWatchedReconciler(
             TrackingWatchedCacheVerdict.WATCHED -> return false
             TrackingWatchedCacheVerdict.UNRESOLVED -> return true
             TrackingWatchedCacheVerdict.NOT_WATCHED -> {
+
                 val gate = activityGate ?: return false
                 val resolved = entry.resolvedUnderGate ?: return true
                 return gate.isAfter(resolved)
             }
         }
     }
+
+    private fun stillAuthorised(entry: TrackingWatchedCacheEntry, key: WatchKey): Boolean {
+        val gate = negativeEvidence ?: return false
+        val reference = runCatching { resolver.resolve(key) }.getOrNull() ?: return false
+        return runCatching {
+            gate.stillAuthorises(
+                unit = unitOf(key),
+                ids = reference.externalIds,
+                key = key,
+                coverageTakenAt = entry.coverageTakenAt,
+            )
+        }.getOrDefault(false)
+    }
+
+    private fun locallyWatched(key: WatchKey): Boolean =
+        runCatching { coordinator.localWatchState(key)?.isWatched == true }.getOrDefault(false)
+
+    private fun unitOf(key: WatchKey): TrackingWatchedHistoryUnit =
+        if (key.isEpisode) TrackingWatchedHistoryUnit.EPISODE else TrackingWatchedHistoryUnit.MOVIE
 
     private class Question(
         val query: TrackingWatchedQuery,
@@ -422,5 +536,7 @@ class TrackingWatchedReconciler(
         const val DEFAULT_RECENT_WINDOW: Int = 64
 
         const val MAX_PENDING: Int = 256
+
+        const val MAX_OWED_AFTER_MOVE: Int = 256
     }
 }

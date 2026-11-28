@@ -25,6 +25,7 @@ import dev.infusion.core.domain.watchlist.WatchlistRemoteState
 import dev.infusion.core.domain.watchlist.WatchlistSnapshot
 import dev.infusion.core.domain.watchlist.WatchlistStore
 import dev.infusion.core.domain.sync.WatchOutbox
+import dev.infusion.core.domain.tracking.TrackingAccountIdentity
 import dev.infusion.core.domain.tracking.TrackingInboundOutcome
 import dev.infusion.core.model.OutboxEntryId
 import dev.infusion.core.model.TitleId
@@ -64,7 +65,8 @@ class WatchlistCoordinator(
 
     private val activeTracker: () -> String?,
 
-    private val accountRef: (String) -> String?,
+    private val accountIdentity: (String) -> TrackingAccountIdentity =
+        { TrackingAccountIdentity.Unresolved },
 
     private val onChanged: () -> Unit = {},
 
@@ -80,7 +82,19 @@ class WatchlistCoordinator(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : CardActionOwner {
 
-    private val _state = MutableStateFlow(store.read(profileScope.activeProfileId))
+    private val _state = MutableStateFlow(
+
+        android.os.SystemClock.uptimeMillis().let { start ->
+            store.read(profileScope.activeProfileId).also { snapshot ->
+                val end = android.os.SystemClock.uptimeMillis()
+                Log.i(
+                    "WL-PERF",
+                    "stateInit entries=${snapshot.entries.size} readMs=${end - start} startAt=$start " +
+                        "endAt=$end profile=${profileScope.activeProfileId}",
+                )
+            }
+        },
+    )
     val state: StateFlow<WatchlistSnapshot> = _state.asStateFlow()
 
     private val _remote = MutableStateFlow(WatchlistRemoteState.IDLE)
@@ -95,9 +109,16 @@ class WatchlistCoordinator(
 
     private fun persist(next: WatchlistSnapshot) {
         if (next == _state.value) return
+        val t0 = android.os.SystemClock.uptimeMillis()
         store.write(profileScope.activeProfileId, next)
+        val t1 = android.os.SystemClock.uptimeMillis()
         _state.value = next
         onChanged()
+        Log.i(
+            "WL-PERF",
+            "persist entries=${next.entries.size} writeMs=${t1 - t0} at=$t1 " +
+                "notifyMs=${android.os.SystemClock.uptimeMillis() - t1}",
+        )
     }
 
     fun reloadForActiveProfile() {
@@ -109,6 +130,8 @@ class WatchlistCoordinator(
     }
 
     suspend fun refreshNow() {
+        val sweepT0 = android.os.SystemClock.uptimeMillis()
+        Log.i("WL-PERF", "sweepRemoteStart entries=${_state.value.entries.size} at=$sweepT0")
         val trackerId = activeTracker()
         if (trackerId == null) {
 
@@ -119,13 +142,15 @@ class WatchlistCoordinator(
         }
         val port = memberships()[trackerId] ?: return
         if (!port.accountConnected()) return
-        val account = accountRef(trackerId)
+        val account = accountBindingOf(trackerId)
 
         _remote.value = WatchlistRemoteState.LOADING
         val resolved = ArrayList<ResolvedRemote>()
         val seenEntryIds = HashSet<String>()
         var unresolved = 0
         var received = 0
+        var resolveMs = 0L
+        var completionMs = 0L
         val unresolvedByKind = LinkedHashMap<WatchlistKind, Int>()
 
         val unresolvedMemberships = LinkedHashSet<UnresolvedMembershipRef>()
@@ -142,7 +167,13 @@ class WatchlistCoordinator(
                     incomplete += result.value.incompleteRemoteKinds
                     for (record in result.value.records) {
 
-                        val r = identity.resolve(record) ?: identityCompletion?.complete(record)
+                        val rT0 = android.os.SystemClock.uptimeMillis()
+                        val resolvedRecord = identity.resolve(record)
+                        val rT1 = android.os.SystemClock.uptimeMillis()
+                        resolveMs += rT1 - rT0
+                        val r = resolvedRecord ?: identityCompletion?.complete(record)?.also {
+                            completionMs += android.os.SystemClock.uptimeMillis() - rT1
+                        }
                         if (r == null) {
                             unresolved++
                             val row = record.remoteKind.normalizesTo()
@@ -190,7 +221,12 @@ class WatchlistCoordinator(
             }
         }
 
-        var next = WatchlistOps.withdrawOtherAccounts(_state.value, trackerId, account)
+        var next = WatchlistOps.withdrawOtherAccounts(
+            _state.value,
+            trackerId,
+            account,
+            accountIdentity(trackerId),
+        )
         next = WatchlistOps.reconcile(
             snapshot = next,
             providerId = trackerId,
@@ -202,6 +238,8 @@ class WatchlistCoordinator(
             completeKinds = completeKinds,
 
             unresolvedMemberships = unresolvedMemberships,
+
+            identity = accountIdentity(trackerId),
         )
         next = WatchlistOps.retireAbsentSuppressions(
             next,
@@ -210,8 +248,16 @@ class WatchlistCoordinator(
             seenEntryIds,
             completed,
             completeKinds,
+            accountIdentity(trackerId),
         )
         persist(next)
+        val sweepEnd = android.os.SystemClock.uptimeMillis()
+        Log.i(
+            "WL-PERF",
+            "sweepRemoteEnd received=$received resolved=${resolved.size} unresolved=$unresolved " +
+                "resolveMs=$resolveMs completionMs=$completionMs pages=$page held=${next.entries.size} " +
+                "totalMs=${sweepEnd - sweepT0} at=$sweepEnd completed=$completed",
+        )
         _remote.value = if (completed && completeKinds.isNotEmpty()) {
             WatchlistRemoteState.LOADED
         } else {
@@ -333,7 +379,7 @@ class WatchlistCoordinator(
 
     private fun cancelPendingAdds(
         trackerId: String,
-        account: String?,
+        identity: TrackingAccountIdentity,
         titleId: TitleId,
         kind: WatchlistKind,
     ) {
@@ -344,10 +390,12 @@ class WatchlistCoordinator(
             if (payload.direction != WatchlistWriteDirection.ADD) continue
             if (payload.titleId != target) continue
             if (payload.kind != kind.toMembershipKind()) continue
-            if (payload.accountRef != account) continue
+            if (!identity.ownsBinding(payload.accountRef)) continue
             outbox.fail(entry.entryId, SUPERSEDED_BY_REMOVE, retryable = false, now = now())
         }
     }
+
+    private fun accountBindingOf(trackerId: String): String? = accountIdentity(trackerId).binding
 
     override fun warm(request: CardActionRequest) {
         acquisition?.warm(request)
@@ -483,7 +531,7 @@ class WatchlistCoordinator(
         )
         val tracker = activeTracker()
         if (tracker != null) {
-            val account = accountRef(tracker)
+            val account = accountBindingOf(tracker)
             if (canWrite(tracker, MembershipOp.ADD)) {
                 enqueueAdd(tracker, account, titleId, kind, request.displayTitle, request.year)
             }
@@ -497,7 +545,7 @@ class WatchlistCoordinator(
         kind: WatchlistKind,
     ): CardActionOutcome {
         val tracker = activeTracker()
-        val account = tracker?.let { accountRef(it) }
+        val account = tracker?.let(::accountBindingOf)
         val key = entryIdOf(kind, titleId)
         val before = _state.value.entry(key)
         val result = WatchlistOps.remove(
@@ -506,10 +554,12 @@ class WatchlistCoordinator(
             providerId = tracker,
             accountRef = account,
             now = now(),
+
+            identity = tracker?.let { accountIdentity(it) },
         )
         persist(result.snapshot)
         if (tracker != null) {
-            cancelPendingAdds(tracker, account, titleId, kind)
+            cancelPendingAdds(tracker, accountIdentity(tracker), titleId, kind)
             if (canWrite(tracker, MembershipOp.REMOVE) && before != null) {
                 enqueueRemovals(tracker, account, before, result.remoteRefs)
             }
@@ -526,7 +576,7 @@ class WatchlistCoordinator(
 
             return CardActionOutcome.Local(RemoteOutcome.None)
         }
-        val account = accountRef(tracker)
+        val account = accountBindingOf(tracker)
         val clearable = canWrite(tracker, MembershipOp.RESET)
         val remote = remoteStatusFor(tracker, MembershipOp.RESET)
         if (clearable) enqueueResumeReset(tracker, account, unit)
@@ -563,6 +613,11 @@ class WatchlistCoordinator(
 
     fun onPageVisible(genuineVisit: Boolean = true) {
         if (visibilityJob?.isActive == true) return
+        Log.i(
+            "WL-PERF",
+            "pageVisible genuine=$genuineVisit entries=${_state.value.entries.size} " +
+                "at=${android.os.SystemClock.uptimeMillis()}",
+        )
         visibilityJob = scope.launch {
             var last = activeTracker()
             if (genuineVisit) refreshNow()
@@ -624,7 +679,12 @@ class WatchlistCoordinator(
 
     private fun hasActiveRemote(entry: WatchlistEntry): Boolean {
         val tracker = activeTracker() ?: return false
-        return entry.hasRemoteMembership(tracker, accountRef(tracker))
+
+        return entry.hasRemoteMembership(
+            tracker,
+            accountBindingOf(tracker),
+            accountIdentity(tracker),
+        )
     }
 
     private fun targetOf(request: CardActionRequest): Pair<TitleId, WatchlistKind>? {

@@ -25,8 +25,10 @@ object AddonUrlNormalizer {
             return AddonUrlInputResult.Invalid(InvalidReason.UNSUPPORTED_SCHEME)
         }
 
+        val parseInput = encodeUriIllegalInData(withHttps)
+
         val parsed = try {
-            UrlParser.parse(withHttps)
+            UrlParser.parse(parseInput)
         } catch (e: dev.infusion.core.network.NetworkPolicyException) {
             return AddonUrlInputResult.Invalid(when (e.reason) {
                 DiagnosticReason.SCHEME_DENIED -> InvalidReason.UNSUPPORTED_SCHEME
@@ -64,6 +66,48 @@ object AddonUrlNormalizer {
 
     @JvmStatic
     fun querySecretOrNull(query: String?): AddonQuerySecret? = query?.let(::AddonQuerySecret)
+
+    private const val URI_ILLEGAL_IN_PATH_OR_QUERY = "\"<>^`{}|"
+
+    private val ENCODE_HEX = "0123456789ABCDEF".toCharArray()
+
+    private fun encodeUriIllegalInData(input: String): String {
+        val schemeEnd = input.indexOf("://")
+        if (schemeEnd < 0) return input
+        var dataStart = -1
+        var i = schemeEnd + 3
+        while (i < input.length) {
+            val c = input[i]
+            if (c == '/' || c == '?' || c == '#') {
+                dataStart = i
+                break
+            }
+            i++
+        }
+        if (dataStart < 0) return input
+
+        var needsEncoding = false
+        for (j in dataStart until input.length) {
+            if (input[j] in URI_ILLEGAL_IN_PATH_OR_QUERY) {
+                needsEncoding = true
+                break
+            }
+        }
+        if (!needsEncoding) return input
+
+        val out = StringBuilder(input.length + 16)
+        out.append(input, 0, dataStart)
+        for (j in dataStart until input.length) {
+            val c = input[j]
+            if (c in URI_ILLEGAL_IN_PATH_OR_QUERY) {
+                val code = c.code
+                out.append('%').append(ENCODE_HEX[(code shr 4) and 0xF]).append(ENCODE_HEX[code and 0xF])
+            } else {
+                out.append(c)
+            }
+        }
+        return out.toString()
+    }
 }
 
 sealed interface AddonUrlInputResult {

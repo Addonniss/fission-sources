@@ -83,7 +83,7 @@ sealed interface WeTrakrOutcome {
 
     data class Unauthorized(val reason: String) : WeTrakrOutcome
 
-    data class Rejected(val reason: String) : WeTrakrOutcome
+    data class Rejected(val reason: String, val oldest: java.time.Instant? = null) : WeTrakrOutcome
 }
 
 class WeTrakrHttpClient(
@@ -93,6 +93,11 @@ class WeTrakrHttpClient(
     private val sleep: suspend (Long) -> Unit = { delay(it) },
 
     private val trace: ((String) -> Unit)? = null,
+
+    private val admission: WeTrakrReadAdmission? = null,
+
+    private val admissionPartition: () -> WeTrakrReadAdmission.Partition =
+        { WeTrakrReadAdmission.Partition(DEFAULT_ADMISSION_KEY, null) },
 ) {
 
     private val scheduleMutex = Mutex()
@@ -112,22 +117,48 @@ class WeTrakrHttpClient(
         if (request.path == DEVICE_CODE_PATH && !reserveDeviceCodeSlot()) {
             return traced(request, WeTrakrOutcome.Retry(DEVICE_CODE_BUDGET_EXHAUSTED, null))
         }
+
+        if (admission != null && chargedAgainstQuota(request) && admission.anyClosed()) {
+            val partition = admissionPartition()
+            admission.closedFor(partition)?.let { closed ->
+                return traced(
+                    request,
+                    WeTrakrOutcome.Retry(
+                        reason = closed.reason,
+                        retryAfterMs = (closed.untilMs - nowMs()).coerceAtLeast(0L),
+                    ),
+                )
+            }
+        }
         val url = buildUrl(request)
         val headers = buildHeaders(request, accessToken)
         val body = request.json?.toByteArray(StandardCharsets.UTF_8)
         val attempts = if (request.retryable) MAX_ATTEMPTS else 1
-        var last: WeTrakrOutcome = WeTrakrOutcome.Retry(TRANSPORT_FAILURE, null)
         var attempt = 0
         while (attempt < attempts) {
             val response = try {
                 paced { transport.execute(url, request.method.name, headers, body, request.limits ?: LIMITS) }
             } catch (oversize: WeTrakrResponseTooLargeException) {
 
-                return traced(request, WeTrakrOutcome.Rejected(RESPONSE_TOO_LARGE_REASON))
+                return traced(
+                    request,
+                    WeTrakrOutcome.Rejected(RESPONSE_TOO_LARGE_REASON),
+                    attempt = attempt + 1,
+                    maxAttempts = attempts,
+                )
             } catch (error: Throwable) {
+
+                val transportFailure = WeTrakrOutcome.Retry(TRANSPORT_FAILURE, null)
                 if (attempt == attempts - 1) {
-                    return traced(request, WeTrakrOutcome.Retry(TRANSPORT_FAILURE, null))
+                    return traced(
+                        request,
+                        transportFailure,
+                        attempt = attempt + 1,
+                        maxAttempts = attempts,
+                        failure = error,
+                    )
                 }
+                emitAttempt(request, transportFailure, null, attempt + 1, attempts, failure = error)
                 sleep(retryDelayMs(attempt, retryAfterMs = null))
                 attempt++
                 continue
@@ -137,23 +168,58 @@ class WeTrakrHttpClient(
             } else {
                 classify(response)
             }
-            when (outcome) {
-                is WeTrakrOutcome.Success -> return traced(request, outcome)
-                is WeTrakrOutcome.Unauthorized -> return traced(request, outcome)
-                is WeTrakrOutcome.Rejected -> return traced(request, outcome)
-                is WeTrakrOutcome.Retry -> {
-                    last = outcome
-                    if (attempt == attempts - 1) return traced(request, outcome)
-                    sleep(retryDelayMs(attempt, outcome.retryAfterMs))
+            val retry = outcome as? WeTrakrOutcome.Retry
+
+            if (retry != null && isDailyQuotaReason(retry.reason)) {
+
+                val wait = retry.retryAfterMs ?: quotaResetMs(response)
+
+                if (admission != null && wait != null) {
+                    admission.close(admissionPartition(), quotaScopeOf(retry.reason), retry.reason, wait)
                 }
+                return traced(
+                    request,
+                    WeTrakrOutcome.Retry(
+                        reason = retry.reason,
+                        retryAfterMs = wait,
+                    ),
+                    response,
+                    attempt + 1,
+                    attempts,
+                )
             }
+            if (retry == null || attempt == attempts - 1) {
+                return traced(request, outcome, response, attempt + 1, attempts)
+            }
+            emitAttempt(request, outcome, response, attempt + 1, attempts)
+            sleep(retryDelayMs(attempt, retry.retryAfterMs))
             attempt++
         }
-        return traced(request, last)
+        return traced(request, WeTrakrOutcome.Retry(TRANSPORT_FAILURE, null))
     }
 
-    private fun traced(request: WeTrakrRequest, outcome: WeTrakrOutcome): WeTrakrOutcome {
-        trace?.invoke(traceLine(request, outcome))
+    private fun emitAttempt(
+        request: WeTrakrRequest,
+        outcome: WeTrakrOutcome,
+        response: WeTrakrHttpResponse?,
+        attempt: Int,
+        maxAttempts: Int,
+
+        failure: Throwable? = null,
+    ) {
+        trace?.invoke(traceLine(request, outcome, response, attempt, maxAttempts, failure))
+    }
+
+    private fun traced(
+        request: WeTrakrRequest,
+        outcome: WeTrakrOutcome,
+        response: WeTrakrHttpResponse? = null,
+        attempt: Int? = null,
+        maxAttempts: Int? = null,
+
+        failure: Throwable? = null,
+    ): WeTrakrOutcome {
+        trace?.invoke(traceLine(request, outcome, response, attempt, maxAttempts, failure))
         return outcome
     }
 
@@ -230,6 +296,9 @@ class WeTrakrHttpClient(
         if (request.json != null) put("Content-Type", "application/json")
     }
 
+    private fun chargedAgainstQuota(request: WeTrakrRequest): Boolean =
+        request.authenticated || request.appKeyOnly || request.optionalAuth
+
     companion object {
 
         const val HEADER_API_VERSION = "wetrakr-api-version"
@@ -251,11 +320,15 @@ class WeTrakrHttpClient(
 
         const val MAX_ATTEMPTS: Int = 4
 
+        const val MAX_WATCHED_WRITE_BATCH: Int = 20
+
         internal const val MISSING_CLIENT_ID = "no WeTrakr client registration configured"
         internal const val NO_TOKEN = "no stored WeTrakr authorization"
         internal const val TRANSPORT_FAILURE = "wetrakr transport failure"
         internal const val DEVICE_CODE_BUDGET_EXHAUSTED = "device_code_budget_exhausted"
         internal const val RESPONSE_TOO_LARGE_REASON = "response_too_large"
+
+        internal const val DEFAULT_ADMISSION_KEY = "wetrakr:default"
 
         internal const val DEVICE_PENDING = "authorization_pending"
         internal const val DEVICE_INVALID_REQUEST = "invalid_request"
@@ -273,6 +346,30 @@ class WeTrakrHttpClient(
                 ?.value?.substringBefore(',')?.trim()?.toLongOrNull()
                 ?.takeIf { it >= 0 }?.times(1_000L)
 
+        internal fun quotaResetMs(response: WeTrakrHttpResponse): Long? =
+            response.headers.entries.firstOrNull { it.key.equals("X-Quota-Reset", ignoreCase = true) }
+                ?.value?.trim()?.toLongOrNull()
+                ?.takeIf { it in 1..DAILY_WINDOW_MAX_SECONDS }
+                ?.times(1_000L)
+
+        internal const val DAILY_WINDOW_MAX_SECONDS: Long = 86_400L
+
+        internal const val DAILY_WINDOW_MAX_MS: Long = DAILY_WINDOW_MAX_SECONDS * 1_000L
+
+        internal val DAILY_QUOTA_REASONS: Set<String> = setOf(
+            "$RATE_LIMIT_REASON:$QUOTA_EXCEEDED_CLASS",
+            APP_WIDE_QUOTA_REASON,
+            APP_USER_QUOTA_REASON,
+        )
+
+        internal fun isDailyQuotaReason(reason: String): Boolean = reason in DAILY_QUOTA_REASONS
+
+        internal fun quotaScopeOf(reason: String): WeTrakrQuotaScope = when (reason) {
+            APP_WIDE_QUOTA_REASON -> WeTrakrQuotaScope.APP_WIDE
+            APP_USER_QUOTA_REASON -> WeTrakrQuotaScope.APP_USER
+            else -> WeTrakrQuotaScope.ACCOUNT
+        }
+
         internal fun retryDelayMs(attempt: Int, retryAfterMs: Long?): Long {
             val exponential = 1_000L shl attempt.coerceIn(0, 5)
             return max(exponential, retryAfterMs ?: 0L).coerceAtMost(MAX_RETRY_DELAY_MS)
@@ -284,20 +381,89 @@ class WeTrakrHttpClient(
             org.json.JSONObject(body).optString("error", "").trim().ifEmpty { null }
         }.getOrNull()
 
-        internal fun statusReason(response: WeTrakrHttpResponse): String {
-            val error = errorCode(response.body)
-            return if (error == null) "http_${response.status}" else "http_${response.status}:$error"
+        private fun isJsonObject(body: String): Boolean = runCatching { org.json.JSONObject(body) }.isSuccess
+
+        internal const val RATE_LIMIT_REASON: String = "rate_limit"
+
+        internal const val QUOTA_EXCEEDED_CLASS: String = "QUOTA_EXCEEDED"
+
+        internal const val APP_WIDE_QUOTA_REASON: String = "$RATE_LIMIT_REASON:APP_QUOTA_EXCEEDED"
+
+        internal const val APP_USER_QUOTA_REASON: String = "$RATE_LIMIT_REASON:APP_USER_QUOTA_EXCEEDED"
+
+        internal const val RATE_LIMIT_WINDOW_REASON: String = "rate_limit:window"
+
+        internal const val RATE_LIMIT_UNREADABLE_REASON: String = "rate_limit:http_429"
+
+        private const val MAX_RATE_LIMIT_CODE_LENGTH: Int = 40
+
+        private val RATE_LIMIT_CODE_SHAPE: Regex = Regex("[A-Za-z0-9_]{1,$MAX_RATE_LIMIT_CODE_LENGTH}")
+
+        internal fun rateLimitReason(body: String): String {
+            val stated = errorCode(body)
+            if (stated != null) {
+                val code = stated.trim()
+                return if (RATE_LIMIT_CODE_SHAPE.matches(code)) {
+                    "$RATE_LIMIT_REASON:${code.uppercase()}"
+                } else {
+                    RATE_LIMIT_UNREADABLE_REASON
+                }
+            }
+
+            return if (isJsonObject(body)) RATE_LIMIT_WINDOW_REASON else RATE_LIMIT_UNREADABLE_REASON
         }
+
+        internal fun limitCounters(headers: Map<String, String>): List<String> =
+            LIMIT_HEADER_FIELDS.mapNotNull { (header, field) ->
+                val raw = headers.entries.firstOrNull { it.key.equals(header, ignoreCase = true) }?.value
+                val value = raw?.trim()?.toLongOrNull() ?: return@mapNotNull null
+                "$field=$value"
+            }
+
+        private val LIMIT_HEADER_FIELDS: List<Pair<String, String>> = listOf(
+            "RateLimit-Limit" to "ratelimit_limit",
+            "RateLimit-Remaining" to "ratelimit_remaining",
+            "RateLimit-Reset" to "ratelimit_reset",
+            "X-Quota-Limit" to "quota_limit",
+            "X-Quota-Remaining" to "quota_remaining",
+            "X-Quota-Reset" to "quota_reset",
+            "X-App-Quota-Limit" to "app_quota_limit",
+            "X-App-Quota-Remaining" to "app_quota_remaining",
+            "X-App-User-Quota-Limit" to "app_user_quota_limit",
+            "X-App-User-Quota-Remaining" to "app_user_quota_remaining",
+        )
+
+        internal fun statusReason(response: WeTrakrHttpResponse): String {
+            val code = errorCode(response.body)?.trim()?.takeIf { RATE_LIMIT_CODE_SHAPE.matches(it) }
+            return if (code == null) "http_${response.status}" else "http_${response.status}:$code"
+        }
+
+        internal fun unauthorizedReason(response: WeTrakrHttpResponse): String =
+            errorCode(response.body)?.trim()?.takeIf { RATE_LIMIT_CODE_SHAPE.matches(it) }
+                ?: "unauthorized"
 
         internal fun classify(response: WeTrakrHttpResponse): WeTrakrOutcome = when {
             response.status in 200..299 -> WeTrakrOutcome.Success(response)
-            response.status == 401 -> WeTrakrOutcome.Unauthorized(errorCode(response.body) ?: "unauthorized")
-            response.status == 429 -> WeTrakrOutcome.Retry("rate_limit", retryAfterMs(response))
+            response.status == 401 -> WeTrakrOutcome.Unauthorized(unauthorizedReason(response))
+
+            response.status == 429 -> WeTrakrOutcome.Retry(rateLimitReason(response.body), retryAfterMs(response))
             response.status == 500 ||
                 response.status == 502 ||
                 response.status == 503 ||
                 response.status == 504 -> WeTrakrOutcome.Retry("provider_unavailable", retryAfterMs(response))
-            else -> WeTrakrOutcome.Rejected(statusReason(response))
+
+            else -> WeTrakrOutcome.Rejected(statusReason(response), journalExpiredOldest(response))
+        }
+
+        internal fun journalExpiredOldest(response: WeTrakrHttpResponse): java.time.Instant? {
+            if (errorCode(response.body)?.trim()?.uppercase() != JOURNAL_EXPIRED_ERROR) return null
+            val oldest = runCatching { org.json.JSONObject(response.body) }
+                .getOrNull()
+                ?.optString("oldest", "")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: return null
+            return runCatching { java.time.Instant.parse(oldest) }.getOrNull()
         }
 
         internal fun classifyDevicePoll(response: WeTrakrHttpResponse): WeTrakrOutcome {
@@ -314,7 +480,7 @@ class WeTrakrHttpClient(
                 DEVICE_LOCKED_CLIENT -> return WeTrakrOutcome.Rejected(DEVICE_LOCKED_CLIENT)
             }
             return when (response.status) {
-                401 -> WeTrakrOutcome.Unauthorized(errorCode(response.body) ?: "unauthorized")
+                401 -> WeTrakrOutcome.Unauthorized(unauthorizedReason(response))
                 429 -> WeTrakrOutcome.Retry(DEVICE_TOO_MANY, retryAfterMs(response))
                 500, 502, 503, 504 -> WeTrakrOutcome.Retry("provider_unavailable", retryAfterMs(response))
 
@@ -322,20 +488,138 @@ class WeTrakrHttpClient(
             }
         }
 
-        internal fun traceLine(request: WeTrakrRequest, outcome: WeTrakrOutcome): String {
-            val fields = mutableListOf("path=${request.path}", "class=${outcome::class.simpleName}")
+        internal fun traceLine(
+            request: WeTrakrRequest,
+            outcome: WeTrakrOutcome,
+            response: WeTrakrHttpResponse? = null,
+            attempt: Int? = null,
+            maxAttempts: Int? = null,
+
+            failure: Throwable? = null,
+        ): String {
+            val fields = mutableListOf(
+                "endpoint=${pathTemplate(request.path)}",
+                "method=${request.method.name}",
+            )
+            if (attempt != null && maxAttempts != null) fields += "attempt=$attempt/$maxAttempts"
+            val answered = response ?: (outcome as? WeTrakrOutcome.Success)?.response
             when (outcome) {
                 is WeTrakrOutcome.Success -> {
+                    fields += "outcome=delivered"
                     fields += "status=${outcome.response.status}"
 
                     fields += "body_bytes=${outcome.response.body.length}"
                 }
-                is WeTrakrOutcome.Retry -> fields += "reason=${outcome.reason}"
-                is WeTrakrOutcome.Rejected -> fields += "reason=${outcome.reason}"
-                is WeTrakrOutcome.Unauthorized -> fields += "reason=${outcome.reason}"
+                is WeTrakrOutcome.Retry -> {
+                    fields += "outcome=retryable"
+                    fields += "reason=${reasonField(outcome.reason)}"
+                    outcome.retryAfterMs?.let { fields += "retry_after_ms=$it" }
+                }
+                is WeTrakrOutcome.Rejected -> {
+                    fields += "outcome=permanent"
+                    fields += "reason=${reasonField(outcome.reason)}"
+                }
+                is WeTrakrOutcome.Unauthorized -> {
+                    fields += "outcome=unauthorized"
+                    fields += "reason=${reasonField(outcome.reason)}"
+                }
             }
+
+            if (failure != null) {
+                fields += "exc=${throwableChain(failure)}"
+                policyReason(failure)?.let { fields += "policy=$it" }
+            }
+            if (answered != null && outcome !is WeTrakrOutcome.Success) {
+                fields += "status=${answered.status}"
+            }
+
+            if (answered != null) fields += limitCounters(answered.headers)
             return "wetrakr " + fields.joinToString(" ")
         }
+
+        internal const val MAX_FAILURE_CHAIN_LINKS: Int = 4
+
+        internal const val MAX_CLASS_NAME_FIELD: Int = 48
+
+        private val CLASS_NAME_SHAPE: Regex = Regex("[A-Za-z0-9_.$]{1,$MAX_CLASS_NAME_FIELD}")
+
+        internal fun throwableChain(error: Throwable): String {
+            val names = ArrayList<String>(MAX_FAILURE_CHAIN_LINKS)
+            val seen = java.util.Collections.newSetFromMap(
+                java.util.IdentityHashMap<Throwable, Boolean>(),
+            )
+            var current: Throwable? = error
+            while (current != null && names.size < MAX_FAILURE_CHAIN_LINKS) {
+                if (!seen.add(current)) break
+                names += className(current)
+                current = current.cause
+            }
+            return if (names.isEmpty()) UNKNOWN_FIELD else names.joinToString("<")
+        }
+
+        internal fun className(error: Throwable): String {
+
+            if (error is NetworkPolicyException) return POLICY_EXCEPTION_NAME
+            val name = error.javaClass.simpleName?.takeIf { it.isNotBlank() }
+                ?: error.javaClass.name.substringAfterLast('.')
+            return name.takeIf { CLASS_NAME_SHAPE.matches(it) } ?: UNKNOWN_FIELD
+        }
+
+        internal fun policyReason(error: Throwable): String? {
+            val seen = java.util.Collections.newSetFromMap(
+                java.util.IdentityHashMap<Throwable, Boolean>(),
+            )
+            var current: Throwable? = error
+            var links = 0
+            while (current != null && links < MAX_FAILURE_CHAIN_LINKS) {
+                if (!seen.add(current)) break
+                if (current is NetworkPolicyException) return current.reason.name
+                current = current.cause
+                links++
+            }
+            return null
+        }
+
+        internal const val POLICY_EXCEPTION_NAME: String = "NetworkPolicyException"
+
+        private val PATH_WORDS: Set<String> = setOf(
+            "media", "external", "imdb", "tmdb", "tvdb",
+            "sync", "tracking", "watched", "history", "unified", "playing", "watching",
+            "movies", "shows", "seasons", "episodes", "lists", "trending", "last", "remove",
+            "account", "settings", "oauth", "device", "code", "token", "refresh", "logout",
+            "scrobble", "start", "pause", "stop", "ratings", "comments", "planning",
+
+            "journal",
+
+            "last_activities", "counters", "total-time",
+        )
+
+        internal fun pathTemplate(path: String): String =
+            path.split('/').joinToString("/") { segment ->
+                if (segment.isEmpty() || segment.lowercase() in PATH_WORDS) segment else "{id}"
+            }
+
+        internal fun reasonField(raw: String): String {
+            for (char in raw) {
+                if (char.isWhitespace()) continue
+                if ((char.isLetterOrDigit() && char.code < 128) || char in "_.:-") continue
+                return UNKNOWN_FIELD
+            }
+            val bounded = StringBuilder(minOf(raw.length, MAX_TRACE_FIELD))
+            for (char in raw) {
+                if (bounded.length >= MAX_TRACE_FIELD) break
+                if (char.isWhitespace()) {
+                    if (bounded.isNotEmpty() && bounded.last() != '-') bounded.append('-')
+                } else {
+                    bounded.append(char)
+                }
+            }
+            val trimmed = bounded.toString().trim('-')
+            return if (trimmed.isEmpty()) UNKNOWN_FIELD else trimmed
+        }
+
+        internal const val MAX_TRACE_FIELD: Int = 64
+        internal const val UNKNOWN_FIELD = "unknown"
 
         val LIMITS: NetworkLimits = NetworkLimits.DEFAULT.copy(
             maxResponseBytes = 128L * 1024,
@@ -361,7 +645,15 @@ class WeTrakrHttpClient(
 
         const val TRACKING_WATCHED_HISTORY_PATH = "/sync/tracking/watched/history"
 
+        const val TRACKING_WATCHED_COUNTERS_PATH = "/sync/tracking/watched/counters"
+
+        const val TRACKING_WATCHED_TOTAL_TIME_PATH = "/sync/tracking/watched/total-time"
+
         const val TRACKING_PATH = "/sync/tracking"
+
+        const val JOURNAL_PATH = "/sync/journal"
+
+        internal const val JOURNAL_EXPIRED_ERROR = "JOURNAL_EXPIRED"
 
         const val TRACKING_WRITE_PATH = "/sync/tracking"
 

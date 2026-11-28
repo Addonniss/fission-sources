@@ -127,15 +127,27 @@ fun InfusionMediaCard(
 
     val demand = LocalCardWatchedDemand.current
     val asksAboutUnit = watchedUnit != null && policy.cardBadges && policy.watchedCheckmark
-    LaunchedEffect(demand, watchedUnit, asksAboutUnit) {
-        if (asksAboutUnit && watchedUnit != null) demand.publish(watchedUnit)
+
+    val windowSize = LocalWindowInfo.current.containerSize
+    var watchedDemandOnScreen by remember { mutableStateOf(false) }
+
+    val watchedVisibilityModifier = Modifier.onGloballyPositioned { coordinates ->
+        val onScreen = CardOnScreen.isVisible(coordinates.boundsInWindow(), windowSize)
+        if (onScreen != watchedDemandOnScreen) watchedDemandOnScreen = onScreen
+    }
+    LaunchedEffect(demand, watchedUnit, asksAboutUnit, watchedDemandOnScreen) {
+
+        if (!asksAboutUnit) return@LaunchedEffect
+        val unit = watchedUnit ?: return@LaunchedEffect
+
+        if (watchedDemandOnScreen) demand.publish(unit)
     }
 
     val resumeDemand = LocalCardResumeDemand.current
     val progressUnit = preview.cardWatchedUnitOrNull().takeIf { preview.kind == TitleKind.MOVIE }
     val progressTitleId = progressUnit?.titleId
     val asksAboutProgress = progressUnit != null && policy.cardBadges && policy.progressBar
-    val windowSize = LocalWindowInfo.current.containerSize
+
     var progressDemandOnScreen by remember { mutableStateOf(false) }
 
     val progressVisibilityModifier = Modifier.onGloballyPositioned { coordinates ->
@@ -228,7 +240,9 @@ fun InfusionMediaCard(
                 reportedCardFocus.value?.invoke(state.isFocused)
             }
 
-            .then(progressVisibilityModifier),
+            .then(progressVisibilityModifier)
+
+            .then(watchedVisibilityModifier),
 
         colors = infusionTvCardColors(),
         shape = infusionTvCardShape(),

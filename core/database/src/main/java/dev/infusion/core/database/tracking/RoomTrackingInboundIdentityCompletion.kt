@@ -23,6 +23,8 @@ class RoomTrackingInboundIdentityCompletion(
     private val identityStore: MediaIdentityStore,
     private val rootTitleStore: CanonicalRootTitleStore,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+
+    private val onOutcome: ((String) -> Unit)? = null,
 ) : TrackingInboundIdentityCompletionPort {
 
     override suspend fun complete(
@@ -34,32 +36,36 @@ class RoomTrackingInboundIdentityCompletion(
         year: Int?,
     ): TrackingWatchKeyLookup = withContext(ioDispatcher) {
         val typed = ids.typed()
-        if (typed.isEmpty()) return@withContext TrackingWatchKeyLookup.Unproven
+        if (typed.isEmpty()) return@withContext refuse(Outcome.NO_ALIAS)
         val watchShape = when (kind) {
             TrackingMediaKind.MOVIE -> true
             TrackingMediaKind.SHOW ->
                 seasonNumber != null && seasonNumber > 0 && episodeNumber != null && episodeNumber > 0
         }
-        if (!watchShape) return@withContext TrackingWatchKeyLookup.Unproven
+        if (!watchShape) return@withContext refuse(Outcome.NO_SHAPE)
         val canonicalAlias = DERIVATION_ORDER.firstNotNullOfOrNull { authority ->
             typed.firstOrNull { it.authority == authority }
-        } ?: return@withContext TrackingWatchKeyLookup.Unproven
+        } ?: return@withContext refuse(Outcome.NO_ALIAS)
         val titleId = CanonicalTitleIdentity.of(canonicalAlias)
 
         val ownedBy = typed.mapNotNull { externalIdDao.get(it.authority, it.value)?.titleId }
-        if (ownedBy.any { it != titleId.value.toString() }) return@withContext TrackingWatchKeyLookup.Unproven
+        if (ownedBy.any { it != titleId.value.toString() }) {
+            return@withContext refuse(Outcome.OWNED_ELSEWHERE)
+        }
 
         val expectedKind = if (kind == TrackingMediaKind.SHOW) TitleKind.SERIES else TitleKind.MOVIE
         val existing = titleDao.getById(titleId.value.toString())
         if (existing != null) {
 
-            if (existing.kind.name != expectedKind.name) return@withContext TrackingWatchKeyLookup.Unproven
+            if (existing.kind.name != expectedKind.name) {
+                return@withContext refuse(Outcome.KIND_MISMATCH)
+            }
         } else {
 
             val displayTitle = title?.trim().orEmpty()
-            if (displayTitle.isEmpty()) return@withContext TrackingWatchKeyLookup.Unproven
+            if (displayTitle.isEmpty()) return@withContext refuse(Outcome.NO_STATED_NAME)
             if (!rootTitleStore.materializeRoot(titleId, expectedKind, displayTitle, year)) {
-                return@withContext TrackingWatchKeyLookup.Unproven
+                return@withContext refuse(Outcome.MATERIALIZE_REFUSED)
             }
         }
 
@@ -70,7 +76,30 @@ class RoomTrackingInboundIdentityCompletion(
             TrackingMediaKind.MOVIE -> WatchKey.movie(titleId)
             TrackingMediaKind.SHOW -> WatchKey.episode(titleId, seasonNumber!!, episodeNumber!!)
         }
+        onOutcome?.invoke(Outcome.COMPLETED)
         TrackingWatchKeyLookup.Resolved(watchKey)
+    }
+
+    private fun refuse(outcome: String): TrackingWatchKeyLookup {
+        onOutcome?.invoke(outcome)
+        return TrackingWatchKeyLookup.Unproven
+    }
+
+    object Outcome {
+
+        const val NO_ALIAS = "no_alias"
+
+        const val NO_SHAPE = "no_shape"
+
+        const val OWNED_ELSEWHERE = "owned_elsewhere"
+
+        const val KIND_MISMATCH = "kind_mismatch"
+
+        const val NO_STATED_NAME = "no_stated_name"
+
+        const val MATERIALIZE_REFUSED = "materialize_refused"
+
+        const val COMPLETED = "completed"
     }
 
     private companion object {

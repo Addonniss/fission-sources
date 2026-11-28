@@ -1,14 +1,23 @@
 package dev.infusion.tracking.wetrakr
 
 import dev.infusion.core.domain.tracking.TrackingActivityStamp
+import dev.infusion.core.domain.tracking.TrackingChangeFeedCategory
+import dev.infusion.core.domain.tracking.TrackingChangeFeedEntry
+import dev.infusion.core.domain.tracking.TrackingChangeFeedPage
+import dev.infusion.core.domain.tracking.TrackingChangeFeedStatus
 import dev.infusion.core.domain.tracking.TrackingExternalIds
 import dev.infusion.core.domain.tracking.TrackingMediaKind
 import dev.infusion.core.domain.tracking.TrackingPlaybackPage
 import dev.infusion.core.domain.tracking.TrackingSavedPlayback
 import dev.infusion.core.domain.tracking.TrackingWatchedAnswer
 import dev.infusion.core.domain.tracking.TrackingWatchedHistoryPage
+import dev.infusion.core.domain.tracking.TrackingWatchedHistoryProviderCount
+import dev.infusion.core.domain.tracking.TrackingWatchedHistoryProviderCounts
 import dev.infusion.core.domain.tracking.TrackingWatchedHistoryRecord
+import dev.infusion.core.domain.tracking.TrackingWatchedHistoryResidueRecord
 import dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit
+import dev.infusion.core.domain.tracking.TrackingWatchedItemName
+import dev.infusion.core.domain.tracking.TrackingWatchedItemNamesPage
 import dev.infusion.core.domain.tracking.TrackingWatchedVerdict
 import dev.infusion.core.domain.upnext.UpNextTrackerKind
 import dev.infusion.core.domain.upnext.UpNextTrackerPage
@@ -52,6 +61,70 @@ object WeTrakrInboundMapping {
             cursor?.takeIf { it.isNotBlank() }?.let { put("after", it) }
             since?.let { put("from_date", isoTimestamp(it)) }
         },
+        authenticated = true,
+        limits = WeTrakrHttpClient.READ_LIMITS,
+    )
+
+    fun watchedNamesRequest(target: String, page: Int, limit: Int): WeTrakrRequest = WeTrakrRequest(
+        method = WeTrakrMethod.GET,
+        path = "${WeTrakrHttpClient.TRACKING_WATCHED_PATH}/$target",
+        query = mapOf(
+            "page" to page.toString(),
+            "limit" to limit.toString(),
+        ),
+        authenticated = true,
+        limits = WeTrakrHttpClient.READ_LIMITS,
+    )
+
+    fun watchedNamesPage(
+        body: String,
+        page: Int,
+        limit: Int,
+        headers: Map<String, String>,
+    ): TrackingWatchedItemNamesPage? {
+        val array = runCatching { JSONArray(body) }.getOrNull() ?: return null
+        val names = ArrayList<TrackingWatchedItemName>(array.length())
+        var malformed = 0
+        var titled = 0
+        for (index in 0 until array.length()) {
+            val row = array.optJSONObject(index)
+            if (row == null) {
+                malformed++
+                continue
+            }
+            val ids = externalIds(row.optJSONObject(FIELD_IDS))
+            if (ids.isEmpty) {
+                malformed++
+                continue
+            }
+            val title = row.optStringOrNull("title")?.trim().orEmpty()
+            if (title.isEmpty()) continue
+            titled++
+            names += TrackingWatchedItemName(
+                externalIds = ids,
+                title = title,
+
+                year = yearOf(row, "release_date") ?: yearOf(row, "first_air_date"),
+            )
+        }
+        val pageCount = pageCount(headers)
+        return TrackingWatchedItemNamesPage(
+            names = names,
+            rows = array.length(),
+            titled = titled,
+            malformed = malformed,
+            page = page,
+
+            hasMore = if (pageCount != null) page < pageCount else array.length() >= limit,
+        )
+    }
+
+    private fun yearOf(row: JSONObject, key: String): Int? =
+        row.optStringOrNull(key)?.trim()?.take(4)?.toIntOrNull()?.takeIf { it in 1800..2200 }
+
+    fun watchedCountersRequest(): WeTrakrRequest = WeTrakrRequest(
+        method = WeTrakrMethod.GET,
+        path = WeTrakrHttpClient.TRACKING_WATCHED_COUNTERS_PATH,
         authenticated = true,
         limits = WeTrakrHttpClient.READ_LIMITS,
     )
@@ -194,9 +267,15 @@ object WeTrakrInboundMapping {
     ): TrackingWatchedHistoryPage? {
         val array = runCatching { JSONArray(body) }.getOrNull() ?: return null
         val records = ArrayList<TrackingWatchedHistoryRecord>(array.length())
+
+        val residue = ArrayList<TrackingWatchedHistoryResidueRecord>()
         var malformed = 0
         var undated = 0
         var showLevelOnly = 0
+        var seasonZero = 0
+        var coordinateMissing = 0
+        var coordinateInvalid = 0
+        var coordinateNegative = 0
         for (index in 0 until array.length()) {
             val row = array.optJSONObject(index)
             if (row == null) {
@@ -212,11 +291,13 @@ object WeTrakrInboundMapping {
                     }
                     if (row.optBoolean("watched_at_unknown", false)) {
                         undated++
+                        residue += undatedResidue(TrackingWatchedHistoryUnit.MOVIE, ids, null, null)
                         continue
                     }
                     val watchedAt = instantOrNull(row, FIELD_WATCHED_AT)
                     if (watchedAt == null) {
                         undated++
+                        residue += undatedResidue(TrackingWatchedHistoryUnit.MOVIE, ids, null, null)
                         continue
                     }
                     records += TrackingWatchedHistoryRecord(
@@ -225,6 +306,7 @@ object WeTrakrInboundMapping {
                         watchedAt = watchedAt,
                         title = row.optStringOrNull("title"),
                         year = row.optIntOrNull("year"),
+                        providerPlayId = playIdOf(row),
                     )
                 }
                 TrackingWatchedHistoryUnit.EPISODE -> {
@@ -236,19 +318,41 @@ object WeTrakrInboundMapping {
                         malformed++
                         continue
                     }
+
                     val season = row.optIntOrNull("season_number")
                     val number = row.optIntOrNull("number")
                     if (season == null || number == null || season <= 0 || number <= 0) {
                         showLevelOnly++
+                        val coordinateClass = when {
+                            classifyCoordinate(row, FIELD_SEASON_NUMBER) != CoordinateClass.OK ->
+                                classifyCoordinate(row, FIELD_SEASON_NUMBER)
+                            else -> classifyCoordinate(row, FIELD_NUMBER)
+                        }
+                        when (coordinateClass) {
+                            CoordinateClass.SEASON_ZERO -> seasonZero++
+                            CoordinateClass.MISSING -> coordinateMissing++
+                            CoordinateClass.INVALID -> coordinateInvalid++
+                            CoordinateClass.NEGATIVE -> coordinateNegative++
+                            CoordinateClass.OK -> coordinateMissing++
+                        }
+                        residue += TrackingWatchedHistoryResidueRecord(
+                            externalIds = ids,
+                            kind = coordinateClass.kind,
+
+                            seasonNumber = rawIntOrNull(row, FIELD_SEASON_NUMBER),
+                            episodeNumber = rawIntOrNull(row, FIELD_NUMBER),
+                        )
                         continue
                     }
                     if (row.optBoolean("watched_at_unknown", false)) {
                         undated++
+                        residue += undatedResidue(TrackingWatchedHistoryUnit.EPISODE, ids, season, number)
                         continue
                     }
                     val watchedAt = instantOrNull(row, FIELD_WATCHED_AT)
                     if (watchedAt == null) {
                         undated++
+                        residue += undatedResidue(TrackingWatchedHistoryUnit.EPISODE, ids, season, number)
                         continue
                     }
                     records += TrackingWatchedHistoryRecord(
@@ -260,6 +364,7 @@ object WeTrakrInboundMapping {
 
                         title = row.optJSONObject(FIELD_SHOW)?.optStringOrNull("title"),
                         year = row.optJSONObject(FIELD_SHOW)?.optIntOrNull("year"),
+                        providerPlayId = playIdOf(row),
                     )
                 }
             }
@@ -275,7 +380,71 @@ object WeTrakrInboundMapping {
 
             truncating = !nextCursor.isNullOrBlank(),
             completedThrough = if (nextCursor.isNullOrBlank()) readStartedAt else null,
+
+            residue = residue,
+            seasonZero = seasonZero,
+            coordinateMissing = coordinateMissing,
+            coordinateInvalid = coordinateInvalid,
+            coordinateNegative = coordinateNegative,
         )
+    }
+
+    private fun undatedResidue(
+        unit: TrackingWatchedHistoryUnit,
+        ids: TrackingExternalIds,
+        seasonNumber: Int?,
+        episodeNumber: Int?,
+    ): TrackingWatchedHistoryResidueRecord = TrackingWatchedHistoryResidueRecord(
+        externalIds = ids,
+        kind = TrackingWatchedHistoryResidueRecord.KIND_UNDATED,
+        seasonNumber = if (unit == TrackingWatchedHistoryUnit.EPISODE) seasonNumber else null,
+        episodeNumber = if (unit == TrackingWatchedHistoryUnit.EPISODE) episodeNumber else null,
+    )
+
+    private fun classifyCoordinate(row: JSONObject, key: String): CoordinateClass {
+        if (!row.has(key) || row.isNull(key)) return CoordinateClass.MISSING
+        val text = row.opt(key)?.toString()?.trim().orEmpty()
+        if (text.isEmpty()) return CoordinateClass.MISSING
+        val value = text.toIntOrNull() ?: return CoordinateClass.INVALID
+        return when {
+            value == 0 -> CoordinateClass.SEASON_ZERO
+            value < 0 -> CoordinateClass.NEGATIVE
+            else -> CoordinateClass.OK
+        }
+    }
+
+    private fun rawIntOrNull(row: JSONObject, key: String): Int? {
+        if (!row.has(key) || row.isNull(key)) return null
+        return row.opt(key)?.toString()?.trim()?.toIntOrNull()
+    }
+
+    private enum class CoordinateClass(val kind: String) {
+
+        OK(TrackingWatchedHistoryResidueRecord.KIND_COORDINATE_MISSING),
+        SEASON_ZERO(TrackingWatchedHistoryResidueRecord.KIND_SEASON_ZERO),
+        MISSING(TrackingWatchedHistoryResidueRecord.KIND_COORDINATE_MISSING),
+        INVALID(TrackingWatchedHistoryResidueRecord.KIND_COORDINATE_INVALID),
+        NEGATIVE(TrackingWatchedHistoryResidueRecord.KIND_COORDINATE_NEGATIVE),
+    }
+
+    private fun playIdOf(row: JSONObject): String? =
+        row.optStringOrNull(FIELD_PLAY_ID)?.trim()?.takeIf { it.isNotEmpty() }
+
+    fun watchedCounters(body: String, observedAt: Instant): TrackingWatchedHistoryProviderCounts? {
+        val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
+        val movies = counterOrNull(root, FIELD_COUNTER_MOVIES)
+        val episodes = counterOrNull(root, FIELD_COUNTER_EPISODES)
+        if (movies == null && episodes == null) return null
+        return TrackingWatchedHistoryProviderCounts(
+            movies = TrackingWatchedHistoryProviderCount(items = movies),
+            episodes = TrackingWatchedHistoryProviderCount(items = episodes),
+            observedAt = observedAt,
+        )
+    }
+
+    private fun counterOrNull(root: JSONObject, key: String): Int? {
+        if (!root.has(key) || root.isNull(key)) return null
+        return root.optInt(key, -1).takeIf { it >= 0 }
     }
 
     fun upNextPage(body: String, pageCount: Int?, page: Int, limit: Int): UpNextTrackerPage? {
@@ -314,7 +483,7 @@ object WeTrakrInboundMapping {
                 seriesTitle = show.optStringOrNull("title"),
                 year = show.optIntOrNull("year"),
 
-                activityAt = instantOrNull(show, FIELD_TRACKED_AT),
+                activityAt = instantOrNull(show, FIELD_WATCHED_AT) ?: instantOrNull(show, FIELD_TRACKED_AT),
                 airedAt = localDateOrNull(next, FIELD_AIR_DATE),
                 airedAtProvenAt = instantOrNull(next, FIELD_AIR_DATETIME),
                 providerRecordId = show.optLongOrNull("id")?.toString(),
@@ -328,6 +497,140 @@ object WeTrakrInboundMapping {
         )
     }
 
+    fun journalRequest(fromDate: java.time.Instant, page: Int, limit: Int): WeTrakrRequest =
+        WeTrakrRequest(
+            method = WeTrakrMethod.GET,
+            path = WeTrakrHttpClient.JOURNAL_PATH,
+            query = buildMap {
+                put("from_date", isoTimestamp(fromDate))
+                put("page", page.toString())
+                put("limit", limit.toString())
+            },
+            authenticated = true,
+            limits = WeTrakrHttpClient.READ_LIMITS,
+        )
+
+    fun journalPage(
+        body: String,
+        headers: Map<String, String>,
+        page: Int,
+        limit: Int,
+    ): TrackingChangeFeedPage? {
+        val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
+        val visibleUntil = instantOrNull(root, FIELD_VISIBLE_UNTIL) ?: return null
+        val array = root.optJSONArray(FIELD_JOURNAL) ?: return null
+        val entries = ArrayList<TrackingChangeFeedEntry>(array.length())
+        var malformed = 0
+        for (index in 0 until array.length()) {
+            val row = array.optJSONObject(index)
+            if (row == null) {
+                malformed++
+                continue
+            }
+            val entry = journalEntry(row)
+            if (entry == null) malformed++ else entries += entry
+        }
+        return TrackingChangeFeedPage(
+            entries = entries,
+            visibleUntil = visibleUntil,
+            retentionDays = counterOrNull(root, FIELD_RETENTION_DAYS),
+            malformed = malformed,
+
+            truncating = pageCount(headers)?.let { page < it } ?: (array.length() >= limit),
+        )
+    }
+
+    private fun journalEntry(row: JSONObject): TrackingChangeFeedEntry? {
+        val entryId = row.optStringOrNull(FIELD_ENTRY_ID)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val category = categoryOf(row.optStringOrNull(FIELD_CATEGORY)) ?: return null
+        val status = statusOf(row.optStringOrNull(FIELD_STATUS_JOURNAL)) ?: return null
+        val actionAt = instantOrNull(row, FIELD_ACTION_AT) ?: return null
+        val type = row.optStringOrNull(FIELD_TYPE)?.trim()?.lowercase()
+        val unit = when (type) {
+            TYPE_MOVIE -> TrackingWatchedHistoryUnit.MOVIE
+            TYPE_EPISODE -> TrackingWatchedHistoryUnit.EPISODE
+
+            else -> null
+        }
+        val externalIds = externalIds(row.optJSONObject(FIELD_IDS))
+        val watchedAt = if (row.optBoolean(FIELD_WATCHED_AT_UNKNOWN, false)) {
+            null
+        } else {
+            instantOrNull(row, FIELD_WATCHED_AT)
+        }
+        return when (unit) {
+            TrackingWatchedHistoryUnit.MOVIE -> TrackingChangeFeedEntry(
+                entryId = entryId,
+                category = category,
+                status = status,
+                actionAt = actionAt,
+                unit = TrackingWatchedHistoryUnit.MOVIE,
+                externalIds = externalIds,
+                watchedAt = watchedAt,
+                watchedAtUnknown = row.optBoolean(FIELD_WATCHED_AT_UNKNOWN, false),
+                providerPlayId = playIdOf(row),
+                title = row.optStringOrNull(FIELD_TITLE),
+            )
+            TrackingWatchedHistoryUnit.EPISODE -> {
+                val season = row.optIntOrNull(FIELD_SEASON_NUMBER)
+                val number = row.optIntOrNull(FIELD_NUMBER)
+                if (season == null || number == null || season <= 0 || number <= 0) return null
+                TrackingChangeFeedEntry(
+                    entryId = entryId,
+                    category = category,
+                    status = status,
+                    actionAt = actionAt,
+                    unit = TrackingWatchedHistoryUnit.EPISODE,
+                    externalIds = externalIds,
+
+                    seriesExternalIds = externalIds(row.optJSONObject(FIELD_SHOW_IDS)),
+                    seasonNumber = season,
+                    episodeNumber = number,
+                    watchedAt = watchedAt,
+                    watchedAtUnknown = row.optBoolean(FIELD_WATCHED_AT_UNKNOWN, false),
+                    providerPlayId = playIdOf(row),
+                    title = row.optStringOrNull(FIELD_TITLE),
+                )
+            }
+            null -> TrackingChangeFeedEntry(
+                entryId = entryId,
+                category = category,
+                status = status,
+                actionAt = actionAt,
+                unit = null,
+                externalIds = externalIds,
+                watchedAt = watchedAt,
+                watchedAtUnknown = row.optBoolean(FIELD_WATCHED_AT_UNKNOWN, false),
+                providerPlayId = playIdOf(row),
+                title = row.optStringOrNull(FIELD_TITLE),
+            )
+        }
+    }
+
+    private fun categoryOf(raw: String?): TrackingChangeFeedCategory? = when (raw?.trim()?.lowercase()) {
+        "watched" -> TrackingChangeFeedCategory.WATCHED
+        "watching" -> TrackingChangeFeedCategory.WATCHING
+        "waiting" -> TrackingChangeFeedCategory.WAITING
+        "planning" -> TrackingChangeFeedCategory.PLANNING
+        "dropped" -> TrackingChangeFeedCategory.DROPPED
+        "paused" -> TrackingChangeFeedCategory.PAUSED
+        "ignored" -> TrackingChangeFeedCategory.IGNORED
+        "ratings" -> TrackingChangeFeedCategory.RATINGS
+        "favorites" -> TrackingChangeFeedCategory.FAVORITES
+        "notes" -> TrackingChangeFeedCategory.NOTES
+        "likes" -> TrackingChangeFeedCategory.LIKES
+        "comments" -> TrackingChangeFeedCategory.COMMENTS
+        "lists" -> TrackingChangeFeedCategory.LISTS
+        else -> null
+    }
+
+    private fun statusOf(raw: String?): TrackingChangeFeedStatus? = when (raw?.trim()?.lowercase()) {
+        "added" -> TrackingChangeFeedStatus.ADDED
+        "updated" -> TrackingChangeFeedStatus.UPDATED
+        "removed" -> TrackingChangeFeedStatus.REMOVED
+        else -> null
+    }
+
     fun externalIdOf(body: String): Long? =
         runCatching { JSONObject(body).optLongOrNull("id") }.getOrNull()?.takeIf { it > 0 }
 
@@ -336,10 +639,12 @@ object WeTrakrInboundMapping {
             ?: return TrackingWatchedAnswer(TrackingWatchedVerdict.MALFORMED)
         val tracks = tracksOf(root)
             ?: return TrackingWatchedAnswer(TrackingWatchedVerdict.MALFORMED)
-        if (tracks.isEmpty()) return TrackingWatchedAnswer(TrackingWatchedVerdict.NOT_WATCHED)
+
+        val plays = watchedPlays(tracks)
+        if (plays.isEmpty()) return TrackingWatchedAnswer(TrackingWatchedVerdict.NOT_WATCHED)
         return TrackingWatchedAnswer(
             verdict = TrackingWatchedVerdict.WATCHED,
-            watchedAt = newestPlayInstant(tracks),
+            watchedAt = newestPlayInstant(plays),
         )
     }
 
@@ -353,7 +658,7 @@ object WeTrakrInboundMapping {
             ?: return TrackingWatchedAnswer(TrackingWatchedVerdict.MALFORMED)
         val tracks = tracksOf(root)
             ?: return TrackingWatchedAnswer(TrackingWatchedVerdict.MALFORMED)
-        val matching = tracks.filter { track ->
+        val matching = watchedPlays(tracks).filter { track ->
             track.optString("target", "").trim() == TARGET_EPISODE &&
                 track.optIntOrNull("season_number") == seasonNumber &&
                 track.optIntOrNull("number") == episodeNumber
@@ -405,6 +710,11 @@ object WeTrakrInboundMapping {
             if (track.optBoolean("tracked_at_unknown", false)) null else instantOrNull(track, FIELD_TRACKED_AT)
         },
     )
+
+    private fun watchedPlays(tracks: List<JSONObject>): List<JSONObject> = tracks.filter { track ->
+        val status = track.optStringOrNull(FIELD_STATUS)?.trim()
+        status.isNullOrEmpty() || status.equals(STATUS_WATCHED, ignoreCase = true)
+    }
 
     fun externalIds(json: JSONObject?): TrackingExternalIds {
         if (json == null) return TrackingExternalIds()
@@ -462,8 +772,31 @@ object WeTrakrInboundMapping {
     private const val FIELD_SHOW_IDS = "show_ids"
     private const val FIELD_PLAYBACK = "playback"
     private const val FIELD_WATCHED_AT = "watched_at"
+
+    private const val FIELD_PLAY_ID = "play_id"
+
+    private const val FIELD_COUNTER_MOVIES = "movies"
+    private const val FIELD_COUNTER_EPISODES = "episodes"
     private const val FIELD_TRACKED_AT = "tracked_at"
+    private const val FIELD_STATUS = "status"
+
+    private const val STATUS_WATCHED = "watched"
     private const val FIELD_AIR_DATE = "air_date"
     private const val FIELD_AIR_DATETIME = "air_datetime"
     private const val FIELD_NEXT_WATCHING_EPISODE = "next_watching_episode"
+
+    private const val FIELD_JOURNAL = "journal"
+    private const val FIELD_VISIBLE_UNTIL = "visible_until"
+    private const val FIELD_RETENTION_DAYS = "retention_days"
+    private const val FIELD_ENTRY_ID = "entry_id"
+    private const val FIELD_CATEGORY = "category"
+
+    private const val FIELD_STATUS_JOURNAL = "status"
+    private const val FIELD_ACTION_AT = "action_at"
+    private const val FIELD_TYPE = "type"
+    private const val FIELD_TITLE = "title"
+    private const val FIELD_SEASON_NUMBER = "season_number"
+    private const val FIELD_NUMBER = "number"
+    private const val FIELD_WATCHED_AT_UNKNOWN = "watched_at_unknown"
+    private const val TYPE_EPISODE = "episode"
 }

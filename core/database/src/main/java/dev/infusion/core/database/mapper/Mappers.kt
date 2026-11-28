@@ -56,6 +56,8 @@ object WatchEventMapper {
             observedAtMs = (event as? WatchEvent.Imported)?.observedAt?.toEpochMilli(),
             connectorId = (event as? WatchEvent.Imported)?.connectorId,
             connectorEventId = null,
+
+            providerPlayId = (event as? WatchEvent.Imported)?.providerPlayId,
             sessionId = event.sessionId?.value?.toString(),
             anchorSourceId = anchor?.nativeItemId?.sourceId?.value?.toString(),
             anchorNativeId = anchor?.nativeItemId?.nativeId,
@@ -90,6 +92,8 @@ object WatchEventMapper {
                 sessionId = sessionId,
                 positionMs = entity.positionMs,
                 durationMs = entity.durationMs,
+
+                providerPlayId = entity.providerPlayId,
             )
         }
     }

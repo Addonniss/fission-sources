@@ -34,4 +34,7 @@ class TieredMetadataCacheStore(
         memory.purgeOlderThan(nowMs, maxAgeMs)
         return persistent.purgeOlderThan(nowMs, maxAgeMs)
     }
+
+    override suspend fun stamps(namespace: String, keys: List<String>): Map<String, Long> =
+        persistent.stamps(namespace, keys)
 }

@@ -148,6 +148,17 @@ object OutboxWriteKind {
     }
 }
 
+val WATCH_OUTBOX_SUSPENDED_ON_DEPARTURE: Set<String> = setOf(
+    OutboxWriteKind.WATCHLIST_ADD,
+    OutboxWriteKind.WATCHLIST_REMOVE,
+    OutboxWriteKind.WATCHLIST_RESUME_RESET,
+)
+
+fun OutboxPayload.isSuspendedOnDeparture(): Boolean = when (this) {
+    is OutboxPayload.WatchlistWrite, is OutboxPayload.ResumeReset -> true
+    else -> false
+}
+
 data class OutboxEntry(
     val entryId: OutboxEntryId,
     val connectorId: String,

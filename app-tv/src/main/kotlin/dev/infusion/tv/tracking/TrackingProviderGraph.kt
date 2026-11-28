@@ -3,6 +3,7 @@ package dev.infusion.tv.tracking
 import dev.infusion.core.domain.profile.ProfileScope
 import dev.infusion.core.domain.sync.WatchOutbox
 import dev.infusion.core.domain.tracking.MutableTrackingServicePort
+import dev.infusion.core.domain.tracking.TrackingAccountIdentity
 import dev.infusion.core.domain.tracking.TrackingConnectionState
 import dev.infusion.core.domain.tracking.TrackingCredentialStore
 import dev.infusion.core.domain.tracking.TrackingInboundCursorStore
@@ -19,6 +20,7 @@ import dev.infusion.core.domain.tracking.TrackingRuntimeSourcePort
 import dev.infusion.core.domain.tracking.TrackingWatchedCacheStore
 import dev.infusion.core.domain.tracking.TrackingWatchedLookupPort
 import dev.infusion.core.domain.tracking.TrackingWatchedLookupResult
+import dev.infusion.core.domain.tracking.TrackingWatchedNegativeEvidencePort
 import dev.infusion.core.domain.tracking.WatchTrackingSelectionControl
 import dev.infusion.core.domain.tracking.WatchTrackingSelectionGate
 import dev.infusion.core.domain.upnext.UpNextReadPort
@@ -29,6 +31,7 @@ import dev.infusion.core.domain.upnext.UpNextTrackerPage
 import dev.infusion.core.sync.WatchSyncCoordinator
 import dev.infusion.core.sync.tracking.TrackingInboundImporter
 import dev.infusion.core.sync.tracking.TrackingScrobbleConnector
+import dev.infusion.core.sync.tracking.TrackingWatchedBulkSync
 import dev.infusion.core.sync.tracking.TrackingWatchedReconciler
 import dev.infusion.feature.vertical.tracking.TrackingSettingsStateHolder
 import dev.infusion.core.model.watch.WatchKey
@@ -65,7 +68,7 @@ class TrackingProviderGraph(
 
     val registered: () -> Boolean,
 
-    reader: TrackingInboundReadPort? = provider as? TrackingInboundReadPort,
+    private val reader: TrackingInboundReadPort? = provider as? TrackingInboundReadPort,
 
     lookup: TrackingWatchedLookupPort? = provider as? TrackingWatchedLookupPort,
 
@@ -78,6 +81,14 @@ class TrackingProviderGraph(
     ratings: () -> dev.infusion.core.domain.ratings.PersonalRatingPort? = { null },
 
     private val reviewReader: () -> dev.infusion.core.domain.tracking.TrackingReviewReadPort? = { null },
+
+    private val deliveryTrace: ((String) -> Unit)? = null,
+
+    private val onActivated: (suspend () -> Unit)? = null,
+
+    private val watchedNegativeEvidence: TrackingWatchedNegativeEvidencePort? = null,
+
+    private val watchedBulkSync: TrackingWatchedBulkSync? = null,
 ) {
 
     val connector: TrackingScrobbleConnector = TrackingScrobbleConnector(
@@ -88,9 +99,11 @@ class TrackingProviderGraph(
         onTerminalDelivered = onTerminalDelivered,
         membership = membership,
 
-        activeAccountRef = ::accountIdentity,
+        activeAccountIdentity = ::activeAccountIdentity,
 
         ratings = ratings,
+
+        trace = deliveryTrace,
     )
 
     val inbound: TrackingInboundImporter? = reader?.let { readable ->
@@ -152,6 +165,9 @@ class TrackingProviderGraph(
             scope = scope,
             enabled = { watchTrackingActive },
             onPass = ::traceWatchedPass,
+
+            negativeEvidence = watchedNegativeEvidence,
+            bulkSync = watchedBulkSync,
         )
     }
 
@@ -175,9 +191,11 @@ class TrackingProviderGraph(
         credentialStore.credentials(provider.providerId)?.accountLabel
     }.getOrNull()
 
-    fun accountIdentity(): String? = runCatching {
-        credentialStore.credentials(provider.providerId)?.accountId
-    }.getOrNull()
+    fun activeAccountIdentity(): TrackingAccountIdentity = runCatching {
+        TrackingAccountIdentity.of(credentialStore.credentials(provider.providerId))
+    }.getOrDefault(TrackingAccountIdentity.Unresolved)
+
+    fun accountIdentity(): String? = activeAccountIdentity().binding
 
     fun demandWatchedStates(watchKeys: Collection<WatchKey>) {
         watched?.demandAll(watchKeys)
@@ -240,11 +258,18 @@ class TrackingProviderGraph(
             append(" watched_lookup")
             append(" demanded=").append(result.demanded)
             append(" cached=").append(result.cached)
+            append(" known_locally=").append(result.knownLocally)
+            append(" reasked=").append(result.reasked)
             append(" unresolved=").append(result.unresolved)
             append(" requests=").append(result.requests)
             append(" queried=").append(result.queried)
             append(" imported=").append(result.imported)
             append(" not_watched=").append(result.notWatched)
+
+            append(" not_watched_locally=").append(result.notWatchedLocally)
+            append(" deferred_for_bulk_sync=").append(result.deferredForBulkSync)
+
+            append(" gate_refused=").append(gateRefusalCounts(result.gateRefusals))
             append(" skipped=").append(reasonCounts(result.skipped))
             result.failure?.let { append(" failure=present") }
         }
@@ -257,6 +282,14 @@ class TrackingProviderGraph(
         return if (parts.isEmpty()) "NONE" else parts.joinToString(",")
     }
 
+    private fun gateRefusalCounts(refusals: Map<String, Int>): String {
+        val parts = refusals.entries
+            .filter { it.value > 0 }
+            .sortedBy { it.key }
+            .map { "${it.key}:${it.value}" }
+        return if (parts.isEmpty()) "NONE" else parts.joinToString(",")
+    }
+
     private var connectionObservation: Job? = null
 
     private val registrationMutex = Mutex()
@@ -266,6 +299,7 @@ class TrackingProviderGraph(
     }
 
     suspend fun applyRegistration() {
+        var activate: Boolean
         registrationMutex.withLock {
             val nowConnected = runCatching { isConnected() }.getOrDefault(false)
             connected = nowConnected
@@ -298,6 +332,25 @@ class TrackingProviderGraph(
             }
             wasWatchTrackingActive = watchTrackingActive
             traceRegistration(nowConnected, isSelected)
+
+            activate = activation && onActivated != null
+        }
+        if (activate) {
+
+            scope.launch {
+                try {
+                    onActivated!!.invoke()
+                } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                    throw cancellation
+                } catch (failure: Throwable) {
+
+                    android.util.Log.w(
+                        TRACE_TAG,
+                        "${provider.providerId} activation_work_failed" +
+                            " type=${failure.javaClass.simpleName}",
+                    )
+                }
+            }
         }
     }
 

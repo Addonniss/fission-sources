@@ -83,6 +83,10 @@ object StreamsParser {
 
     internal const val MAX_DESCRIPTION_BYTES = 1024
 
+    private const val DESCRIPTION_KEY = "description"
+
+    private const val LEGACY_TITLE_KEY = "title"
+
     internal const val MAX_VIDEO_SIZE_BYTES = 1L shl 50
 
     private fun boundedVideoSize(o: JsonValue.Obj): Long? {
@@ -95,11 +99,28 @@ object StreamsParser {
         return bytes.takeIf { it in 1..MAX_VIDEO_SIZE_BYTES }
     }
 
-    private fun boundedDescription(o: JsonValue.Obj, maxBytes: Int, label: String): String? =
-        WireJson.string(o, "description")?.let {
-            StremioId.validateBoundedString(it, maxBytes, label, allowLineBreaks = true)
-            it
+    private fun boundedDescription(o: JsonValue.Obj, maxBytes: Int, label: String): String? {
+        val supplied = ArrayList<String>(2)
+
+        WireJson.string(o, DESCRIPTION_KEY)?.let { supplied += it }
+        legacyTitle(o)?.let { supplied += it }
+        val accepted = ArrayList<String>(supplied.size)
+        for (text in supplied) {
+            if (text.isBlank()) continue
+            StremioId.validateBoundedString(text, maxBytes, label, allowLineBreaks = true)
+            if (accepted.any { it.contains(text) }) continue
+
+            accepted.removeAll { text.contains(it) }
+            accepted.add(text)
         }
+        return when (accepted.size) {
+            0 -> null
+            1 -> accepted.single()
+            else -> accepted.joinToString("\n")
+        }
+    }
+
+    private fun legacyTitle(o: JsonValue.Obj): String? = (o.fields[LEGACY_TITLE_KEY] as? JsonValue.Str)?.value
 
     private fun informationalNoticeType(o: JsonValue.Obj): String? {
         val streamData = o.fields["streamData"] as? JsonValue.Obj ?: return null

@@ -12,22 +12,26 @@ import dev.infusion.core.domain.tracking.TrackingMediaResolverPort
 import dev.infusion.core.domain.tracking.TrackingPreferencesStore
 import dev.infusion.core.domain.tracking.TrackingRuntimeSourcePort
 import dev.infusion.core.domain.tracking.TrackingWatchedCacheStore
+import dev.infusion.core.domain.tracking.TrackingWatchedNegativeEvidencePort
 import dev.infusion.core.domain.tracking.WatchTrackingSelectionControl
 import dev.infusion.core.domain.tracking.WatchTrackingSelectionGate
 import dev.infusion.core.network.HardenedHttpClient
 import dev.infusion.core.network.OkHttpHardenedClient
 import dev.infusion.core.sync.WatchSyncCoordinator
+import dev.infusion.core.sync.tracking.TrackingWatchedBulkSync
 import dev.infusion.feature.vertical.tracking.TrackingSettingsStateHolder
 import dev.infusion.tracking.wetrakr.HardenedWeTrakrTransport
 import dev.infusion.tracking.wetrakr.WeTrakrAuthRepository
 import dev.infusion.tracking.wetrakr.WeTrakrConfiguration
 import dev.infusion.tracking.wetrakr.WeTrakrHttpClient
+import dev.infusion.tracking.wetrakr.WeTrakrReadAdmission
 import dev.infusion.tracking.wetrakr.WeTrakrTrackingProvider
 import kotlinx.coroutines.CoroutineScope
 
 class WeTrakrTrackingGraph(
     scope: CoroutineScope,
-    profileScope: ProfileScope,
+
+    private val profileScope: ProfileScope,
     credentialStore: TrackingCredentialStore,
     outbox: WatchOutbox,
     resolver: TrackingMediaResolverPort,
@@ -45,6 +49,12 @@ class WeTrakrTrackingGraph(
     appVersion: String,
 
     hub: HardenedHttpClient = OkHttpHardenedClient(),
+
+    onActivated: (suspend () -> Unit)? = null,
+
+    watchedNegativeEvidence: TrackingWatchedNegativeEvidencePort? = null,
+
+    watchedBulkSync: TrackingWatchedBulkSync? = null,
 ) {
 
     val configuration: WeTrakrConfiguration = WeTrakrConfiguration(
@@ -55,11 +65,15 @@ class WeTrakrTrackingGraph(
 
     private val transport = HardenedWeTrakrTransport(hub)
 
+    private val readAdmission = WeTrakrReadAdmission()
+
     private val client = WeTrakrHttpClient(
         configuration = configuration,
         transport = transport,
 
         trace = { line -> android.util.Log.i(TRACE_TAG, line) },
+        admission = readAdmission,
+        admissionPartition = { admissionPartition() },
     )
 
     private val auth = WeTrakrAuthRepository(
@@ -68,10 +82,24 @@ class WeTrakrTrackingGraph(
         store = credentialStore,
     )
 
+    private fun admissionPartition(): WeTrakrReadAdmission.Partition =
+        WeTrakrReadAdmission.Partition(
+            profileId = runCatching { profileScope.activeProfileId }.getOrDefault(""),
+            accountId = auth.accountId(),
+        )
+
     val provider: WeTrakrTrackingProvider = WeTrakrTrackingProvider(configuration, client, auth)
 
     val watchedHistory: dev.infusion.tracking.wetrakr.WeTrakrWatchedHistory by lazy {
         dev.infusion.tracking.wetrakr.WeTrakrWatchedHistory(client = client, auth = auth)
+    }
+
+    val watchedItemNames: dev.infusion.tracking.wetrakr.WeTrakrWatchedItemNames by lazy {
+        dev.infusion.tracking.wetrakr.WeTrakrWatchedItemNames(client = client, auth = auth)
+    }
+
+    val journal: dev.infusion.tracking.wetrakr.WeTrakrJournal by lazy {
+        dev.infusion.tracking.wetrakr.WeTrakrJournal(client = client, auth = auth)
     }
 
     val watchlistMembership: dev.infusion.tracking.wetrakr.WeTrakrWatchlistMembership by lazy {
@@ -128,6 +156,13 @@ class WeTrakrTrackingGraph(
         reviewReader = { comments },
 
         onTerminalDelivered = { refreshInbound() },
+
+        deliveryTrace = { line -> android.util.Log.i(TRACE_TAG, line) },
+
+        onActivated = onActivated,
+
+        watchedNegativeEvidence = watchedNegativeEvidence,
+        watchedBulkSync = watchedBulkSync,
     )
 
     fun refreshInbound() = graph.refreshInbound()

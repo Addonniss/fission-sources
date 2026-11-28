@@ -65,9 +65,15 @@ interface OutboxDao {
 
     @Query(
         "UPDATE outbox SET state = 'CANCELLED', last_error = :reason, next_attempt_at_ms = NULL " +
-            "WHERE profile_id = :profileId AND connector_id = :connectorId AND state IN ('PENDING', 'FAILED')",
+            "WHERE profile_id = :profileId AND connector_id = :connectorId AND state IN ('PENDING', 'FAILED') " +
+            "AND kind NOT IN (:suspendedKinds)",
     )
-    fun disposeByUserChoice(profileId: String, connectorId: String, reason: String): Int
+    fun disposeByUserChoice(
+        profileId: String,
+        connectorId: String,
+        reason: String,
+        suspendedKinds: List<String>,
+    ): Int
 
     @Query(
         "SELECT COUNT(*) FROM outbox WHERE profile_id = :profileId AND connector_id = :connectorId " +
@@ -80,6 +86,13 @@ interface OutboxDao {
             "AND state = 'CANCELLED' AND last_error = :reason",
     )
     fun countByReason(profileId: String, connectorId: String, reason: String): Int
+
+    @Query(
+        "SELECT MIN(next_attempt_at_ms) FROM outbox WHERE profile_id = :profileId " +
+            "AND connector_id = :connectorId AND state = 'FAILED' " +
+            "AND next_attempt_at_ms IS NOT NULL AND next_attempt_at_ms > :nowMs",
+    )
+    fun earliestEligibleAtMs(profileId: String, connectorId: String, nowMs: Long): Long?
 
     @Query("SELECT * FROM outbox ORDER BY created_at_ms ASC")
     fun all(): List<OutboxEntity>

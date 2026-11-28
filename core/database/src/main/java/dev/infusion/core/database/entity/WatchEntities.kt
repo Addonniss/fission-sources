@@ -48,6 +48,8 @@ data class WatchEventEntity(
 
     @ColumnInfo(name = "connector_event_id") val connectorEventId: String?,
 
+    @ColumnInfo(name = "provider_play_id") val providerPlayId: String? = null,
+
     @ColumnInfo(name = "session_id") val sessionId: String?,
 
     @ColumnInfo(name = "anchor_source_id") val anchorSourceId: String?,

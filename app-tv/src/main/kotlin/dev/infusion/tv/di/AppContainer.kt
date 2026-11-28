@@ -22,6 +22,7 @@ import dev.infusion.core.domain.profile.ProfilePolicy
 import dev.infusion.core.domain.profile.ProfileRepository
 import dev.infusion.core.domain.profile.ProfileTrackingCredentialRevoker
 import dev.infusion.core.domain.tracking.ConnectorRegistration
+import dev.infusion.core.domain.tracking.TrackingAccountIdentity
 import dev.infusion.core.domain.tracking.TrackingServicePort
 import dev.infusion.core.domain.tracking.watchTrackingSelectionGate
 import dev.infusion.core.domain.watch.GetContinueWatchingUseCase
@@ -1193,41 +1194,91 @@ class AppContainer(
                 return@withContext null
             }
 
-            if (!watchedHistorySweepInFlight.compareAndSet(false, true)) return@withContext null
-            try {
-                val trackerId = trackingPreferencesStore.current().selectedTrackerId
-                if (trackerId == null) {
+            val trackerId = trackingPreferencesStore.current().selectedTrackerId
+            if (trackerId == null) {
 
-                    android.util.Log.i(WATCHED_HISTORY_TAG, "skip reason=on_device_only")
-                    return@withContext null
-                }
+                android.util.Log.i(WATCHED_HISTORY_TAG, "skip reason=on_device_only")
+                return@withContext null
+            }
+
+            if (!watchedBulkSync.tryBegin(trackerId)) return@withContext null
+
+            var settled: Map<dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit, Boolean> =
+                WATCHED_HISTORY_UNITS.associateWith { false }
+            try {
                 val port = trackingGraphs.watchedHistoryPorts()[trackerId]
                 if (port == null) {
 
                     android.util.Log.i(WATCHED_HISTORY_TAG, "skip reason=no_history_port tracker=$trackerId")
                     return@withContext null
                 }
-                dev.infusion.core.sync.tracking.TrackingWatchedHistoryImporter(
-                    providerId = trackerId,
-                    reader = port,
-                    identity = dev.infusion.core.database.tracking.RoomTrackingInboundIdentity(
-                        titleDao = db.titleDao(),
-                        externalIdDao = db.externalIdDao(),
-                        supersession = titleSupersession,
-                        editionDao = db.editionDao(),
-                    ),
-                    identityCompletion = trackingInboundIdentityCompletion,
-                    cursorStore = watchedHistoryCursorStore,
-                    coordinator = coordinator,
 
-                    isAlreadyImported = { watchKey, observedAt ->
-                        coordinator.alreadyImportedCompletion(trackerId, watchKey, observedAt)
-                    },
-                ).sweep()
-                    .also { result ->
+                val changeFeed = trackingGraphs.changeFeedPorts()[trackerId]
+                if (changeFeed != null) {
+                    val journalSync = changeFeedSync(trackerId, changeFeed)
+                    val journal = journalSync.sync()
+                        .also { result ->
 
-                        android.util.Log.i(WATCHED_HISTORY_TAG, result.describe())
+                            android.util.Log.i(WATCHED_HISTORY_TAG, "journal ${result.describe()}")
+                        }
+
+                    val baseline = baselineEligibleUnits(trackerId)
+                    if (baseline.isNotEmpty()) {
+                        android.util.Log.i(
+                            WATCHED_HISTORY_TAG,
+                            "baseline required=" + baseline.joinToString(",") { it.name },
+                        )
                     }
+                    if (journal.needsHistoryRecovery) {
+                        val recovered = watchedHistorySweep(
+                            trackerId,
+                            port,
+                            WATCHED_HISTORY_UNITS,
+                            baselineUnits = baseline,
+                        )
+                        settled = incrementalSettlement(journal, recovered, WATCHED_HISTORY_UNITS)
+                        if (journal.state ==
+                            dev.infusion.core.sync.tracking.TrackingJournalSyncState.EXPIRED
+                        ) {
+                            val reestablished = journalSync.reestablishAfterRecovery(
+                                oldest = journal.oldestServeable,
+                                units = WATCHED_HISTORY_UNITS,
+                            )
+                            android.util.Log.i(
+                                WATCHED_HISTORY_TAG,
+                                "journal recovery reason=${journal.failure} " +
+                                    "oldestStated=${journal.oldestServeable != null} " +
+                                    "reestablished=$reestablished",
+                            )
+                        }
+                        return@withContext recovered
+                    }
+                    val owed = journal.unitsOwedToHistory
+
+                    val walkUnits = WATCHED_HISTORY_UNITS.filter { it in owed || it in baseline }
+                    if (walkUnits.isEmpty()) {
+
+                        settled = incrementalSettlement(journal, null, WATCHED_HISTORY_UNITS)
+                        return@withContext null
+                    }
+                    val swept = watchedHistorySweep(
+                        trackerId,
+                        port,
+                        walkUnits,
+                        baselineUnits = baseline.intersect(walkUnits.toSet()),
+                    )
+                    settled = incrementalSettlement(journal, swept, walkUnits)
+                    return@withContext swept
+                }
+
+                val swept = watchedHistorySweep(
+                    trackerId,
+                    port,
+                    WATCHED_HISTORY_UNITS,
+                    baselineUnits = baselineEligibleUnits(trackerId),
+                )
+                settled = incrementalSettlement(null, swept, WATCHED_HISTORY_UNITS)
+                swept
             } catch (cancellation: kotlinx.coroutines.CancellationException) {
                 throw cancellation
             } catch (failure: Throwable) {
@@ -1238,17 +1289,203 @@ class AppContainer(
                 )
                 null
             } finally {
-                watchedHistorySweepInFlight.set(false)
+
+                watchedBulkSync.end(trackerId, settled)
             }
         }
 
-    private val watchedHistorySweepInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
+    private fun incrementalSettlement(
+        journal: dev.infusion.core.sync.tracking.TrackingJournalSyncResult?,
+        sweep: dev.infusion.core.sync.tracking.TrackingWatchedHistorySweepResult?,
+        units: List<dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit>,
+    ): Map<dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit, Boolean> {
+        val settled = LinkedHashMap<dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit, Boolean>()
+        if (journal != null) {
+            val feedRead = journal.state ==
+                dev.infusion.core.sync.tracking.TrackingJournalSyncState.APPLIED ||
+                journal.state == dev.infusion.core.sync.tracking.TrackingJournalSyncState.NO_PROGRESS
+            for (unit in journal.unitsServedByJournal) settled[unit] = feedRead
+        }
+        if (sweep != null) {
+
+            for (unit in units) settled[unit] = sweep.failures[unit] == null
+        }
+        return settled
+    }
+
+    private suspend fun watchedHistorySweep(
+        trackerId: String,
+        port: dev.infusion.core.domain.tracking.TrackingWatchedHistoryPort,
+        units: List<dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit>,
+
+        baselineUnits: Set<dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit> = emptySet(),
+    ): dev.infusion.core.sync.tracking.TrackingWatchedHistorySweepResult {
+
+        identityOutcomeCounters.clear()
+        return dev.infusion.core.sync.tracking.TrackingWatchedHistoryImporter(
+            providerId = trackerId,
+            reader = port,
+            identity = dev.infusion.core.database.tracking.RoomTrackingInboundIdentity(
+                titleDao = db.titleDao(),
+                externalIdDao = db.externalIdDao(),
+                supersession = titleSupersession,
+                editionDao = db.editionDao(),
+            ),
+            identityCompletion = trackingInboundIdentityCompletion,
+            cursorStore = watchedHistoryCursorStore,
+            coordinator = coordinator,
+
+            isAlreadyImported = { watchKey, observedAt, playId ->
+                coordinator.alreadyImportedCompletion(trackerId, watchKey, observedAt, playId)
+            },
+
+            coveragePort = trackingGraphs.watchedHistoryCoveragePorts()[trackerId],
+
+            coverageStore = watchedHistoryCursorStore,
+
+            coverageScope = {
+                dev.infusion.core.domain.tracking.TrackingWatchedHistoryCoverageScope(
+                    profileId = profileScope.activeProfileId,
+                    accountFingerprint = wetrakrAccountFingerprint(trackerId),
+                )
+            },
+
+            onIdentityDiagnostic = { code -> recordIdentityOutcome(code) },
+
+            itemNames = trackingGraphs.watchedItemNamePorts()[trackerId],
+        ).sweep(units = units, baselineUnits = baselineUnits)
+            .also { result ->
+
+                android.util.Log.i(WATCHED_HISTORY_TAG, result.describe())
+
+                android.util.Log.i(
+                    WATCHED_HISTORY_TAG,
+                    "identity_refusals provider=$trackerId ${identityOutcomeSummary()}",
+                )
+            }
+    }
+
+    private fun baselineEligibleUnits(
+        trackerId: String,
+    ): Set<dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit> {
+        val publishesCoverage =
+            runCatching { trackingGraphs.watchedHistoryCoveragePorts()[trackerId] }.getOrNull() != null
+        if (!publishesCoverage) return emptySet()
+        return runCatching {
+            dev.infusion.core.sync.tracking.TrackingWatchedBaselinePolicy(watchedHistoryCursorStore)
+                .unitsRequiringBaseline(trackerId, WATCHED_HISTORY_UNITS)
+        }.getOrDefault(emptySet())
+    }
+
+    private fun changeFeedSync(
+        trackerId: String,
+        feed: dev.infusion.core.domain.tracking.TrackingChangeFeedPort,
+    ): dev.infusion.core.sync.tracking.TrackingJournalSync =
+        dev.infusion.core.sync.tracking.TrackingJournalSync(
+            providerId = trackerId,
+            feed = feed,
+            identity = dev.infusion.core.database.tracking.RoomTrackingInboundIdentity(
+                titleDao = db.titleDao(),
+                externalIdDao = db.externalIdDao(),
+                supersession = titleSupersession,
+                editionDao = db.editionDao(),
+            ),
+            identityCompletion = trackingInboundIdentityCompletion,
+
+            cursorStore = watchedHistoryCursorStore,
+            checkpointStore = watchedHistoryCursorStore,
+            coverageStore = watchedHistoryCursorStore,
+            coordinator = coordinator,
+
+            isAlreadyImported = { watchKey, observedAt, playId ->
+                coordinator.alreadyImportedCompletion(trackerId, watchKey, observedAt, playId)
+            },
+
+            accountFingerprint = { wetrakrAccountFingerprint(trackerId) },
+        )
+
+    private fun wetrakrAccountFingerprint(trackerId: String): String? {
+        if (trackerId != dev.infusion.tracking.wetrakr.WeTrakrAuthRepository.WETRAKR_PROVIDER_ID) {
+            return null
+        }
+        val accountId = runCatching { trackingGraphs.wetrakr.accountId() }.getOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() && it != "0" }
+            ?: return null
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("wetrakr|$accountId".toByteArray(Charsets.UTF_8))
+
+        return digest.take(12).joinToString("") { "%02x".format(it) }
+    }
+
+    private val watchedBulkSync = dev.infusion.core.sync.tracking.TrackingWatchedBulkSync()
+
+    private val identityOutcomeCounters = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    private fun recordIdentityOutcome(code: String) {
+        identityOutcomeCounters.merge(code, 1, Int::plus)
+    }
+
+    private fun identityOutcomeSummary(): String =
+        identityOutcomeCounters.entries.sortedBy { it.key }.joinToString(" ") { "${it.key}=${it.value}" }
 
     private val watchedHistoryCursorStore:
         dev.infusion.core.database.tracking.SharedPreferencesTrackingWatchedHistoryCursorStore by lazy {
         dev.infusion.core.database.tracking.SharedPreferencesTrackingWatchedHistoryCursorStore(
             context = context,
             profileScope = profileScope,
+        )
+    }
+
+    private val watchedNegativeEvidenceGate:
+        dev.infusion.core.domain.tracking.TrackingWatchedNegativeEvidencePort by lazy {
+        dev.infusion.core.sync.tracking.TrackingWatchedNegativeEvidenceGate(
+            providerId = dev.infusion.tracking.wetrakr.WeTrakrAuthRepository.WETRAKR_PROVIDER_ID,
+            coverageStore = watchedHistoryCursorStore,
+            incremental = ::watchedIncrementalEvidence,
+            activeProfileId = { profileScope.activeProfileId },
+            accountFingerprint = {
+                wetrakrAccountFingerprint(dev.infusion.tracking.wetrakr.WeTrakrAuthRepository.WETRAKR_PROVIDER_ID)
+            },
+
+            aliasTable = dev.infusion.core.database.tracking.RoomTrackingInboundAliasTable(
+                externalIdDao = db.externalIdDao(),
+                editionDao = db.editionDao(),
+                supersession = titleSupersession,
+            ),
+        )
+    }
+
+    private fun watchedIncrementalEvidence(
+        unit: dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit,
+    ): dev.infusion.core.domain.tracking.TrackingWatchedIncrementalEvidence? {
+        val trackerId = dev.infusion.tracking.wetrakr.WeTrakrAuthRepository.WETRAKR_PROVIDER_ID
+        val accepted = watchedBulkSync.accepted(trackerId, unit) ?: return null
+        val feedServes = runCatching { trackingGraphs.changeFeedPorts()[trackerId]?.servesUnits }
+            .getOrNull()
+            .orEmpty()
+        if (unit in feedServes) {
+            val checkpoint = runCatching { watchedHistoryCursorStore.checkpoint(trackerId) }.getOrNull()
+            if (checkpoint != null) {
+                return dev.infusion.core.domain.tracking.TrackingWatchedIncrementalEvidence(
+                    consumedThrough = checkpoint.fromDate,
+                    accountFingerprint = checkpoint.accountFingerprint,
+                    accepted = accepted,
+                    source = dev.infusion.core.domain.tracking.TrackingWatchedNegativeEvidence
+                        .CONSUMED_BY_CHANGE_FEED,
+                )
+            }
+        }
+        val watermark = runCatching { watchedHistoryCursorStore.cursor(trackerId, unit) }
+            .getOrNull()
+            ?.watermark
+        return dev.infusion.core.domain.tracking.TrackingWatchedIncrementalEvidence(
+            consumedThrough = watermark,
+
+            accountFingerprint = null,
+            accepted = accepted,
+            source = dev.infusion.core.domain.tracking.TrackingWatchedNegativeEvidence
+                .CONSUMED_BY_HISTORY_SWEEP,
         )
     }
 
@@ -1555,6 +1792,8 @@ class AppContainer(
                 titleDao = db.titleDao(),
                 transaction = { block -> db.runInTransaction(block) },
             ),
+
+            onOutcome = { code -> recordIdentityOutcome(code) },
         )
     }
 
@@ -1720,6 +1959,11 @@ class AppContainer(
             clientId = wetrakrClientIdSeam ?: dev.infusion.tv.tracking.GeneratedWeTrakrCredential.clientId(),
             appVersion = appVersionLabel,
             hub = wetrakrHubSeam ?: dev.infusion.core.network.OkHttpHardenedClient(),
+
+            onActivated = { sweepActiveTrackerWatchedHistory() },
+
+            watchedNegativeEvidence = watchedNegativeEvidenceGate,
+            watchedBulkSync = watchedBulkSync,
         )
     }
 
@@ -1784,7 +2028,7 @@ class AppContainer(
             memberships = { membershipsByProvider() },
             activeTracker = { trackingPreferencesStore.current().selectedTrackerId },
 
-            accountRef = ::watchlistAccountIdentity,
+            accountIdentity = ::trackingAccountIdentity,
 
             isResumeEligible = { unit -> cardWatchedState.value.isInProgress(unit) },
             isWatchedUnit = { unit -> cardWatchedState.value.isWatched(unit) },
@@ -1802,9 +2046,7 @@ class AppContainer(
             outbox = watchOutbox,
             ratings = { ratingsByProvider() },
             activeTracker = { trackingPreferencesStore.current().selectedTrackerId },
-            accountRef = { providerId ->
-                runCatching { trackingCredentialStore.credentials(providerId)?.accountId }.getOrNull()
-            },
+            accountRef = { providerId -> trackingAccountIdentity(providerId).verifiedId },
 
             aliasesFor = { titleId, kind -> watchlistIdentityResolver.aliasesFor(titleId, kind) },
         )
@@ -1839,14 +2081,18 @@ class AppContainer(
                     snapshot = snapshot,
                     activeTracker = tracker,
                     activeAccountRef = tracker?.let(::activeTrackingAccountRef),
+
+                    activeAccountIdentity = tracker?.let(::trackingAccountIdentity),
                 )
             }
             .distinctUntilChanged()
 
-    private fun watchlistAccountIdentity(providerId: String): String? = runCatching {
-        val stored = trackingCredentialStore.credentials(providerId)
-        stored?.accountId ?: stored?.accountLabel
-    }.getOrNull()
+    private fun trackingAccountIdentity(providerId: String): TrackingAccountIdentity = runCatching {
+        TrackingAccountIdentity.of(trackingCredentialStore.credentials(providerId))
+    }.getOrDefault(TrackingAccountIdentity.Unresolved)
+
+    private fun watchlistAccountIdentity(providerId: String): String? =
+        trackingAccountIdentity(providerId).binding
 
     private fun activeTrackingAccountRef(providerId: String): String? =
         watchlistAccountIdentity(providerId)
@@ -2688,53 +2934,25 @@ class AppContainer(
         dev.infusion.source.aggregation.metadata.AddonMetadataIdentityBridge(mediaIdentityResolver)
     }
 
+    private val episodeOrderEvidence: dev.infusion.core.domain.metadata.CanonicalEpisodeOrderEvidenceStore by lazy {
+        dev.infusion.core.metadata.MetadataEpisodeOrderEvidenceStore(
+            cache = metadataCacheStore,
+
+            providerId = metadataProvider.providerId,
+
+            trace = { line -> android.util.Log.i("INFUSION-UPNEXT", line) },
+        )
+    }
+
     private val canonicalShowHierarchy: dev.infusion.core.domain.metadata.CanonicalShowHierarchy by lazy {
-        object : dev.infusion.core.domain.metadata.CanonicalShowHierarchy {
-            override suspend fun seasonNumbers(
-                seriesTitleId: dev.infusion.core.model.TitleId,
-            ): List<Int> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                val locale = metadataLocale()
-                val identity = runCatching {
-                    mediaIdentityResolver.resolve(
-                        seriesTitleId,
-                        dev.infusion.core.model.metadata.MediaType.SHOW,
-                        locale,
-                    )
-                }.getOrNull() ?: return@withContext emptyList()
-                val show = runCatching {
-                    metadataRepository.observeDetails(identity, locale).first().details
-                }.getOrNull() as? dev.infusion.core.model.metadata.ShowDetails
-                show?.seasons?.map { it.seasonNumber } ?: emptyList()
-            }
+        dev.infusion.tv.home.UpNextCanonicalShowHierarchy(
+            metadataRepository = metadataRepository,
+            identityResolver = mediaIdentityResolver,
+            locale = { metadataLocale() },
 
-            override suspend fun episodes(
-                seriesTitleId: dev.infusion.core.model.TitleId,
-                seasonNumber: Int,
-            ): List<dev.infusion.core.domain.metadata.CanonicalEpisodeRef> =
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val locale = metadataLocale()
-                    val identity = runCatching {
-                        mediaIdentityResolver.resolve(
-                            seriesTitleId,
-                            dev.infusion.core.model.metadata.MediaType.SHOW,
-                            locale,
-                        )
-                    }.getOrNull() ?: return@withContext emptyList()
-                    val season = runCatching {
-                        metadataRepository.seasonDetails(identity, seasonNumber, locale).valueOrNull()
-                    }.getOrNull() ?: return@withContext emptyList()
-                    season.episodes.map { episode ->
-                        dev.infusion.core.domain.metadata.CanonicalEpisodeRef(
-                            seasonNumber = episode.seasonNumber,
-                            episodeNumber = episode.episodeNumber,
-                            title = episode.name?.takeIf { it.isNotBlank() },
-                            released = episode.airDate?.toString(),
-
-                            runtimeMinutes = episode.runtimeMinutes,
-                        )
-                    }
-                }
-        }
+            episodeOrderEvidence = episodeOrderEvidence,
+            trace = { line -> android.util.Log.i("INFUSION-UPNEXT", line) },
+        )
     }
 
     suspend fun metadataImage(
@@ -3765,10 +3983,13 @@ class AppContainer(
                         "no connected tracker declares Up Next",
                     )
             },
+
             enrich = { request -> upNextCardEnrichment(request) },
             cacheStore = upNextStore,
 
             presentationRetention = upNextPresentationRetention,
+
+            episodeEvidenceRetention = upNextEpisodeEvidenceRetention,
 
             trace = { line -> android.util.Log.i("INFUSION-UPNEXT", line) },
 
@@ -3858,6 +4079,13 @@ class AppContainer(
     private val upNextPresentationRetention: dev.infusion.feature.vertical.home.UpNextPresentationRetention =
         dev.infusion.feature.vertical.home.PersistedUpNextPresentationRetention(
             store = homePresentationStore,
+            localeToken = homePresentationLocale,
+        )
+
+    private val upNextEpisodeEvidenceRetention:
+        dev.infusion.feature.vertical.home.UpNextEpisodeEvidenceRetention =
+        dev.infusion.feature.vertical.home.InMemoryUpNextEpisodeEvidenceRetention(
+
             localeToken = homePresentationLocale,
         )
 
@@ -5361,6 +5589,12 @@ class AppContainer(
     private companion object {
 
         const val WATCHED_HISTORY_TAG = "InfusionWatchedHistory"
+
+        val WATCHED_HISTORY_UNITS: List<dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit> =
+            listOf(
+                dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit.MOVIE,
+                dev.infusion.core.domain.tracking.TrackingWatchedHistoryUnit.EPISODE,
+            )
 
         val JELLYFIN_SENSITIVE_HEADERS = setOf("x-emby-token", "x-emby-authorization")
 

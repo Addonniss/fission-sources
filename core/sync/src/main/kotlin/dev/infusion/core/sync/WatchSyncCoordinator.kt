@@ -56,6 +56,8 @@ class WatchSyncCoordinator(
         positionMs: Long?,
         durationMs: Long? = null,
         cursor: String? = null,
+
+        providerPlayId: String? = null,
     ): WatchState {
         require(
             kind == WatchEvent.Kind.PROGRESS ||
@@ -70,6 +72,7 @@ class WatchSyncCoordinator(
             kind = kind,
             observedAt = observedAt,
             positionMs = positionMs,
+            providerPlayId = providerPlayId,
         )
         if (!alreadyAppended) {
             val event = WatchEvent.Imported(
@@ -81,6 +84,7 @@ class WatchSyncCoordinator(
                 observedAt = observedAt,
                 positionMs = positionMs,
                 durationMs = durationMs,
+                providerPlayId = providerPlayId,
             )
             ledger.append(event)
         }
@@ -100,12 +104,14 @@ class WatchSyncCoordinator(
         connectorId: String,
         watchKey: WatchKey,
         observedAt: Instant,
+        providerPlayId: String? = null,
     ): Boolean =
         ledger.eventsFor(watchKey).any { event ->
             event is WatchEvent.Imported &&
                 event.connectorId == connectorId &&
                 event.kind == WatchEvent.Kind.COMPLETED &&
-                event.observedAt == observedAt
+                event.observedAt == observedAt &&
+                samePlay(event.providerPlayId, providerPlayId)
         }
 
     fun importedFactAlreadyHeld(
@@ -114,14 +120,19 @@ class WatchSyncCoordinator(
         kind: WatchEvent.Kind,
         observedAt: Instant,
         positionMs: Long?,
+        providerPlayId: String? = null,
     ): Boolean =
         ledger.eventsFor(watchKey).any { event ->
             event is WatchEvent.Imported &&
                 event.connectorId == connectorId &&
                 event.kind == kind &&
                 event.observedAt == observedAt &&
-                (kind == WatchEvent.Kind.COMPLETED || event.positionMs == positionMs)
+                (kind == WatchEvent.Kind.COMPLETED || event.positionMs == positionMs) &&
+                samePlay(event.providerPlayId, providerPlayId)
         }
+
+    private fun samePlay(held: String?, incoming: String?): Boolean =
+        held == null || incoming == null || held == incoming
 
     fun materialize(key: WatchKey): WatchState {
 
@@ -129,6 +140,8 @@ class WatchSyncCoordinator(
         stateStore.save(state)
         return state
     }
+
+    fun localWatchState(key: WatchKey): WatchState? = stateStore.current(key)
 
     private fun enqueueForConnectors(event: WatchEvent.Local, knownDurationMs: Long? = null) {
 

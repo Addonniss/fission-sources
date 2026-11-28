@@ -1,5 +1,6 @@
 package dev.infusion.core.domain.watchlist
 
+import dev.infusion.core.domain.tracking.TrackingAccountIdentity
 import dev.infusion.core.domain.tracking.TrackingExternalIds
 import dev.infusion.core.model.ArtworkPolicy
 import dev.infusion.core.model.TitleId
@@ -62,14 +63,24 @@ data class WatchlistEntry(
         get() = (listOfNotNull(localAddedAt) + contributions.map { it.orderingInstant })
             .maxOrNull()
 
-    fun remoteRefsFor(providerId: String, accountRef: String?): List<String> =
+    fun remoteRefsFor(
+        providerId: String,
+        accountRef: String?,
+        identity: TrackingAccountIdentity? = null,
+    ): List<String> =
         contributions
-            .filter { it.providerId == providerId && it.accountRef == accountRef }
+            .filter { it.providerId == providerId && watchlistSameAccount(it.accountRef, accountRef, identity) }
             .map { it.remoteRef }
             .distinct()
 
-    fun hasRemoteMembership(providerId: String, accountRef: String?): Boolean =
-        contributions.any { it.providerId == providerId && it.accountRef == accountRef }
+    fun hasRemoteMembership(
+        providerId: String,
+        accountRef: String?,
+        identity: TrackingAccountIdentity? = null,
+    ): Boolean =
+        contributions.any {
+            it.providerId == providerId && watchlistSameAccount(it.accountRef, accountRef, identity)
+        }
 
     val isEmpty: Boolean get() = localAddedAt == null && contributions.isEmpty()
 }
@@ -88,8 +99,14 @@ data class WatchlistSuppression(
 
     val entryId: String get() = "${kind.name}:${titleId.value}"
 
-    fun covers(entryId: String, providerId: String, accountRef: String?): Boolean =
-        this.entryId == entryId && this.providerId == providerId && this.accountRef == accountRef
+    fun covers(
+        entryId: String,
+        providerId: String,
+        accountRef: String?,
+        identity: TrackingAccountIdentity? = null,
+    ): Boolean =
+        this.entryId == entryId && this.providerId == providerId &&
+            watchlistSameAccount(this.accountRef, accountRef, identity)
 }
 
 enum class ResumeResetDelivery { PENDING, DELIVERED, UNSUPPORTED }
@@ -196,12 +213,14 @@ object WatchlistOps {
         providerId: String?,
         accountRef: String?,
         now: Instant,
+        identity: TrackingAccountIdentity? = null,
     ): RemoveResult {
         val entry = snapshot.entry(entryId) ?: return RemoveResult(snapshot, emptyList())
-        val targeted = providerId?.let { entry.remoteRefsFor(it, accountRef) } ?: emptyList()
+        val targeted = providerId?.let { entry.remoteRefsFor(it, accountRef, identity) } ?: emptyList()
 
         val remainingContributions = entry.contributions.filterNot {
-            providerId != null && it.providerId == providerId && it.accountRef == accountRef
+            providerId != null && it.providerId == providerId &&
+                watchlistSameAccount(it.accountRef, accountRef, identity)
         }
         val next = entry.copy(localAddedAt = null, contributions = remainingContributions)
         val entries = if (next.isEmpty) snapshot.entries.filterNot { it.entryId == entryId }
@@ -217,7 +236,7 @@ object WatchlistOps {
                 suppressedRefs = targeted.toSet(),
                 suppressedAt = now,
             )
-            upsertSuppression(snapshot.suppressions, record)
+            upsertSuppression(snapshot.suppressions, record, identity)
         }
         return RemoveResult(
             snapshot.copy(entries = entries, suppressions = suppressions),
@@ -236,13 +255,14 @@ object WatchlistOps {
         now: Instant,
         completeKinds: Set<WatchlistKind> = WatchlistKind.entries.toSet(),
         unresolvedMemberships: Set<UnresolvedMembershipRef> = emptySet(),
+        identity: TrackingAccountIdentity? = null,
     ): WatchlistSnapshot {
 
         val byEntry = LinkedHashMap<String, MutableList<ResolvedRemote>>()
         for (record in resolved) {
             val entryId = id(record.kind, record.titleId)
 
-            if (isSuppressed(snapshot, entryId, providerId, accountRef)) continue
+            if (isSuppressed(snapshot, entryId, providerId, accountRef, identity)) continue
             byEntry.getOrPut(entryId) { mutableListOf() }.add(record)
         }
 
@@ -251,7 +271,7 @@ object WatchlistOps {
 
             val withdrawable = entry.contributions.filter { contribution ->
                 contribution.providerId == providerId &&
-                    contribution.accountRef == accountRef &&
+                    watchlistSameAccount(contribution.accountRef, accountRef, identity) &&
                     UnresolvedMembershipRef(contribution.remoteKind, contribution.remoteRef) !in
                     unresolvedMemberships
             }
@@ -266,7 +286,7 @@ object WatchlistOps {
             } else {
 
                 val prior = entry.contributions
-                    .filter { it.providerId == providerId && it.accountRef == accountRef }
+                    .filter { it.providerId == providerId && watchlistSameAccount(it.accountRef, accountRef, identity) }
                     .associateBy { it.remoteRef }
                 val merged = incoming.mapIndexed { index, record ->
                     val previous = prior[record.remoteRef]
@@ -349,11 +369,13 @@ object WatchlistOps {
         snapshot: WatchlistSnapshot,
         activeProviderId: String?,
         activeAccountRef: String?,
+        identity: TrackingAccountIdentity? = null,
     ): WatchlistSnapshot {
         val entries = snapshot.entries
             .map { entry ->
                 entry.copy(contributions = entry.contributions.filter {
-                    it.providerId == activeProviderId && it.accountRef == activeAccountRef
+                    it.providerId == activeProviderId &&
+                        watchlistSameAccount(it.accountRef, activeAccountRef, identity)
                 })
             }
             .filterNot { it.isEmpty }
@@ -365,7 +387,8 @@ object WatchlistOps {
         entryId: String,
         providerId: String,
         accountRef: String?,
-    ): Boolean = snapshot.suppressions.any { it.covers(entryId, providerId, accountRef) }
+        identity: TrackingAccountIdentity? = null,
+    ): Boolean = snapshot.suppressions.any { it.covers(entryId, providerId, accountRef, identity) }
 
     fun retireSuppressionOnAbsence(
         snapshot: WatchlistSnapshot,
@@ -373,10 +396,11 @@ object WatchlistOps {
         providerId: String,
         accountRef: String?,
         completed: Boolean,
+        identity: TrackingAccountIdentity? = null,
     ): WatchlistSnapshot {
         if (!completed) return snapshot
         return snapshot.copy(suppressions = snapshot.suppressions.filterNot {
-            it.covers(entryId, providerId, accountRef)
+            it.covers(entryId, providerId, accountRef, identity)
         })
     }
 
@@ -387,11 +411,12 @@ object WatchlistOps {
         seenEntryIds: Set<String>,
         completed: Boolean,
         completeKinds: Set<WatchlistKind> = WatchlistKind.entries.toSet(),
+        identity: TrackingAccountIdentity? = null,
     ): WatchlistSnapshot {
         if (!completed) return snapshot
         return snapshot.copy(suppressions = snapshot.suppressions.filterNot { suppression ->
             suppression.providerId == providerId &&
-                suppression.accountRef == accountRef &&
+                watchlistSameAccount(suppression.accountRef, accountRef, identity) &&
                 suppression.kind in completeKinds &&
                 suppression.entryId !in seenEntryIds
         })
@@ -437,10 +462,24 @@ object WatchlistOps {
     private fun upsertSuppression(
         suppressions: List<WatchlistSuppression>,
         record: WatchlistSuppression,
+        identity: TrackingAccountIdentity? = null,
     ): List<WatchlistSuppression> {
-        val filtered = suppressions.filterNot { it.covers(record.entryId, record.providerId, record.accountRef) }
+        val filtered = suppressions.filterNot {
+            it.covers(record.entryId, record.providerId, record.accountRef, identity)
+        }
         return (filtered + record).takeLast(WatchlistLimits.MAX_SUPPRESSIONS)
     }
+}
+
+private fun watchlistSameAccount(
+    storedRef: String?,
+    accountRef: String?,
+    identity: TrackingAccountIdentity?,
+): Boolean = when {
+    storedRef == accountRef -> true
+    identity == null -> false
+
+    else -> identity.matches(storedRef) && identity.matches(accountRef)
 }
 
 data class UnresolvedMembershipRef(

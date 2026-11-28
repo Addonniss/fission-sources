@@ -46,6 +46,23 @@ class TrackingGraphs(
             put(wetrakr.provider.providerId, wetrakr.watchedHistory)
         }
 
+    fun watchedHistoryCoveragePorts():
+        Map<String, dev.infusion.core.domain.tracking.TrackingWatchedHistoryCoveragePort> =
+        buildMap {
+            put(wetrakr.provider.providerId, wetrakr.watchedHistory)
+        }
+
+    fun watchedItemNamePorts():
+        Map<String, dev.infusion.core.domain.tracking.TrackingWatchedItemNamePort> =
+        buildMap {
+            put(wetrakr.provider.providerId, wetrakr.watchedItemNames)
+        }
+
+    fun changeFeedPorts(): Map<String, dev.infusion.core.domain.tracking.TrackingChangeFeedPort> =
+        buildMap {
+            put(wetrakr.provider.providerId, wetrakr.journal)
+        }
+
     fun bindResumeResetGuard(
         guard: (dev.infusion.core.model.watch.WatchKey) -> Boolean,
         onRead: (java.time.Instant, Boolean, Set<dev.infusion.core.model.watch.WatchKey>) -> Unit,
